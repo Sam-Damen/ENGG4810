@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 #include "inc/hw_memmap.h"
 #include "driverlib/fpu.h"
 #include "driverlib/gpio.h"
@@ -23,11 +24,13 @@
 #include "fatfs/src/ff.h"
 #include "fatfs/src/diskio.h"
 
+#include "examples/boards/ek-tm4c123gxl/drivers/rgb.h"
+
 #include "Config.h"
 #include "I2C.h"
 #include "ADC.h"
 #include "UART.h"
-//#include "LED.h"
+#include "LED.h"
 
 
 
@@ -64,6 +67,14 @@ static FATFS FatFs;
 static DIR DirObj;
 static FILINFO FilInfo;
 static FIL FilObj;
+
+
+//*****************************************************************************
+//
+// Write Buffer for SD card
+//
+//*****************************************************************************
+char SDBuf[100];
 
 //*****************************************************************************
 //
@@ -182,7 +193,7 @@ SysTickHandler(void)
 //*****************************************************************************
 
 void
-SDWrite(char * file, char * data)
+SDWrite(const char * file, char * data)
 {
     //
     //Disable Interrupts
@@ -193,18 +204,9 @@ SDWrite(char * file, char * data)
     UINT bytesWritten;
 
 	//
-	// Open Directory
-	//
-	iFResult = f_opendir(&DirObj, Cwd);
-	if(iFResult != FR_OK)
-	{
-		UARTprintf("\n %s", StringFromFResult(iFResult) );
-	}
-
-	//
 	// Open the file
 	//
-	iFResult = f_open(&FilObj,file, FA_WRITE | FA_OPEN_ALWAYS);
+	iFResult = f_open(&FilObj,file, FA_WRITE | FA_OPEN_EXISTING);
 	if(iFResult != FR_OK)
 	{
 		UARTprintf("\n %s", StringFromFResult(iFResult) );
@@ -242,10 +244,12 @@ SDWrite(char * file, char * data)
 //
 //*****************************************************************************
 
-void
+const char *
 Configure_SD(void) {
 
 	FRESULT iFResult;
+	uint32_t count = 0;
+	static char fileName[10];
 
 
     //
@@ -268,15 +272,41 @@ Configure_SD(void) {
     {
         UARTprintf("f_mount error: %s\n", StringFromFResult(iFResult));
     }
+
+    //
+    // Create New File
+    //
+
+    //Open Directory
+	if (f_opendir(&DirObj, Cwd) == FR_OK) {
+		//Count files that are not directory
+		while( (f_readdir(&DirObj, &FilInfo) == FR_OK) && FilInfo.fname[0]) {
+			if( !(FilInfo.fattrib & AM_DIR)) {
+				count++;
+			}
+		}
+	}
+	//Create Filename and file
+	sprintf(fileName, "Log_%d.txt", count + 1);
+	iFResult = f_open(&FilObj,fileName, FA_WRITE | FA_CREATE_ALWAYS);
+    if(iFResult != FR_OK)
+    {
+        UARTprintf("Create file error: %s\n", StringFromFResult(iFResult));
+    }
+    f_close(&FilObj);
+
+    return fileName;
 }
 
 
 #endif
 
 
+
+
 //*****************************************************************************
 //
-// Setup Basic System Functions
+// Setup Basic System Functions and I/O
 //
 //*****************************************************************************
 
@@ -291,11 +321,21 @@ Setup(void)
 
 
     //
-    //Enable GIPO for LED
+    //Enable GIPO for RGB
     //
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
-    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_2);
+    RGBInit(0);
+    RGBIntensitySet(0.5f);
+    Configure_RGB(BLUE, BLINK_OFF);
+    RGBEnable();
 
+
+#ifdef UV_EN
+    //
+    // Enable GPIO for UV
+    //
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, UV_PIN);
+#endif
 
     //
     //Enable lazy stacking for interrupt handlers
@@ -315,7 +355,11 @@ int
 main(void)
 {
 
+	const char * fileName;
+	char ADCBuf[4];
+
     Setup();
+
 
 #ifdef ADC_EN
     Configure_ADC();
@@ -331,7 +375,7 @@ main(void)
 #endif
 
 #ifdef SD_EN
-    Configure_SD();
+    fileName = Configure_SD();
 #endif
 
     //
@@ -339,17 +383,33 @@ main(void)
     //
     ROM_IntMasterEnable();
 
+#ifdef UV_EN
+    //Enable UV Sensor
+    GPIOPinWrite(GPIO_PORTE_BASE, UV_PIN, UV_PIN);
+#endif
+
+	ROM_SysCtlDelay(SysCtlClockGet() / 12 );
 
     while(1)
     {
 
-    	//UARTprintf("Testing\r\n");
-    	SDWrite("test.txt", "hello \r\n");
+        ROM_IntMasterDisable();
+
+    	//sprintf(ADCBuf, "%d\r\n", ReadADC(ADC0_BASE));
+    	//UARTprintf(ADCBuf);
+
+    	//SDBuf is populated by GPS interrupt (null character??)
+    	//strcat(SDBuf, ADCBuf);
+
+    	SDWrite(fileName, SDBuf);
+
+
+        ROM_IntMasterEnable();
 
 		//
 		// Turn on LED so we know something is happening
 		//
-        GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, GPIO_PIN_2);
+        Configure_RGB(GREEN, BLINK_OFF);
 
 
 		ROM_SysCtlDelay(SysCtlClockGet() / 12 );

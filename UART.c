@@ -21,6 +21,11 @@
 #include "driverlib/uart.h"
 #include "utils/uartstdio.h"
 
+#include "Config.h"
+#include "LED.h"
+
+
+extern char SDBuf[100];
 
 
 //*****************************************************************************
@@ -32,6 +37,7 @@ void
 UARTIntHandler(void)
 {
     uint32_t ui32Status;
+    uint32_t i = 0;
     unsigned char c;
 
 
@@ -49,6 +55,10 @@ UARTIntHandler(void)
     // Loop while there are characters in the receive FIFO.
     //
 
+    //
+    // Turn on LED
+    //
+    Configure_RGB(2, BLINK_ON);
 
     while(ROM_UARTCharsAvail(UART1_BASE))
     {
@@ -57,7 +67,8 @@ UARTIntHandler(void)
         //
     	c = (unsigned char) ROM_UARTCharGetNonBlocking(UART1_BASE);
     	ROM_UARTCharPutNonBlocking(UART0_BASE,c);
-
+    	SDBuf[i] = c;
+    	i++;
 
     }
 }
@@ -104,7 +115,7 @@ Configure_UART(void)
     //
     UARTStdioConfig(0, 115200, 16000000);
 
-
+#ifdef GPS_EN
     ROM_UARTConfigSetExpClk(UART1_BASE, ROM_SysCtlClockGet(), 38400,
                             (UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
                              UART_CONFIG_PAR_NONE));
@@ -121,6 +132,8 @@ Configure_UART(void)
     UARTIntRegister(UART1_BASE, UARTIntHandler);
     ROM_IntEnable(INT_UART1);
     ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);
+
+#endif
 }
 
 

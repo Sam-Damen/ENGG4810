@@ -26,6 +26,9 @@
 #include "inc/hw_nvic.h"
 #include "inc/hw_types.h"
 
+#include "LED.h"
+
+
 //*****************************************************************************
 //
 // Forward declaration of the default fault handlers.
@@ -278,6 +281,7 @@ FaultISR(void)
     //
     // Enter an infinite loop.
     //
+	Configure_RGB(0, BLINK_OFF);
     while(1)
     {
     }
@@ -296,6 +300,8 @@ IntDefaultHandler(void)
     //
     // Go into an infinite loop.
     //
+	Configure_RGB(0, BLINK_ON);
+
     while(1)
     {
     }
