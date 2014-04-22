@@ -7,6 +7,7 @@
 
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdint.h>
 #include "inc/hw_ints.h"
 #include "inc/hw_memmap.h"
@@ -26,6 +27,7 @@
 
 
 extern char SDBuf[100];
+extern int GPS_Flag;
 
 
 //*****************************************************************************
@@ -37,7 +39,7 @@ void
 UARTIntHandler(void)
 {
     uint32_t ui32Status;
-    uint32_t i = 0;
+    static uint32_t i = 0;
     unsigned char c;
 
 
@@ -58,7 +60,7 @@ UARTIntHandler(void)
     //
     // Turn on LED
     //
-    Configure_RGB(2, BLINK_ON);
+    Configure_RGB(2);
 
     while(ROM_UARTCharsAvail(UART1_BASE))
     {
@@ -69,8 +71,16 @@ UARTIntHandler(void)
     	ROM_UARTCharPutNonBlocking(UART0_BASE,c);
     	SDBuf[i] = c;
     	i++;
-
+    	//Got all of the data (GPS appends \r)
+    	if (c == '\r') {
+    		GPS_Flag = 1;
+    		i = 0;
+    	}
     }
+
+
+
+
 }
 
 

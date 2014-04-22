@@ -27,10 +27,11 @@
 //*****************************************************************************
 
 void
-Configure_RGB(int Col, float Blink)
+Configure_RGB(int Col)
 {
 
 	uint32_t Colours[3];
+
 
 	switch(Col) {
 
@@ -63,6 +64,6 @@ Configure_RGB(int Col, float Blink)
 		break;
 	}
 
-    RGBBlinkRateSet(Blink);
+
 
 }

@@ -37,37 +37,41 @@ Configure_ADC(void)
 {
 
     //
-    // Enable the GPIOs and the ADC used by this example.
+    // Enable the GPIOs and the ADC
     //
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
-
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC1);
     //
     // Select the external reference for greatest accuracy.
     //
     ROM_ADCReferenceSet(ADC0_BASE, ADC_REF_EXT_3V);
-
+    ROM_ADCReferenceSet(ADC1_BASE, ADC_REF_EXT_3V);
     //
     // Configure the pins which are used as analog inputs.
     //
-    ROM_GPIOPinTypeADC(GPIO_PORTE_BASE, GPIO_PIN_3);
+    ROM_GPIOPinTypeADC(GPIO_PORTE_BASE, GPIO_PIN_3 | GPIO_PIN_2);
 
 
     ADCSequenceConfigure(ADC0_BASE, 3, ADC_TRIGGER_PROCESSOR, 0);
-
+    ADCSequenceConfigure(ADC1_BASE, 3, ADC_TRIGGER_PROCESSOR, 0);
 
     ROM_ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_CH0 | ADC_CTL_IE |
+                                                  ADC_CTL_END);
+    ROM_ADCSequenceStepConfigure(ADC1_BASE, 3, 0, ADC_CTL_CH1 | ADC_CTL_IE |
                                                   ADC_CTL_END);
     //
     // Enable the sequence but do not start it yet.
     //
     ROM_ADCSequenceEnable(ADC0_BASE, 3);
+    ROM_ADCSequenceEnable(ADC1_BASE, 3);
 
     //
     // Clear the interrupt status flag.  This is done to make sure the
     // interrupt flag is cleared before we sample.
     //
     ADCIntClear(ADC0_BASE, 3);
+    ADCIntClear(ADC1_BASE, 3);
 }
 
 

@@ -75,6 +75,7 @@ static FIL FilObj;
 //
 //*****************************************************************************
 char SDBuf[100];
+int GPS_Flag = 0;
 
 //*****************************************************************************
 //
@@ -320,14 +321,15 @@ Setup(void)
                        SYSCTL_XTAL_16MHZ);
 
 
+#ifdef LED_EN
     //
     //Enable GIPO for RGB
     //
     RGBInit(0);
     RGBIntensitySet(0.5f);
-    Configure_RGB(BLUE, BLINK_OFF);
+    Configure_RGB(BLUE);
     RGBEnable();
-
+#endif
 
 #ifdef UV_EN
     //
@@ -356,7 +358,8 @@ main(void)
 {
 
 	const char * fileName;
-	char ADCBuf[4];
+	char ADCBuf[11];
+	char UVBuf[5];
 
     Setup();
 
@@ -378,11 +381,6 @@ main(void)
     fileName = Configure_SD();
 #endif
 
-    //
-    // Enable Interrupts
-    //
-    ROM_IntMasterEnable();
-
 #ifdef UV_EN
     //Enable UV Sensor
     GPIOPinWrite(GPIO_PORTE_BASE, UV_PIN, UV_PIN);
@@ -390,26 +388,39 @@ main(void)
 
 	ROM_SysCtlDelay(SysCtlClockGet() / 12 );
 
+    //
+    // Enable Interrupts
+    //
+    ROM_IntMasterEnable();
+
     while(1)
     {
 
-        ROM_IntMasterDisable();
+    	if (GPS_Flag) {
+    		ROM_IntMasterDisable();
+    		strcat(SDBuf, ADCBuf);
+    		SDWrite(fileName, SDBuf);
+    		GPS_Flag = 0;
+    		memset(&SDBuf[0], 0, sizeof(SDBuf));
+    		ROM_IntMasterEnable();
+    	}
 
-    	//sprintf(ADCBuf, "%d\r\n", ReadADC(ADC0_BASE));
-    	//UARTprintf(ADCBuf);
 
-    	//SDBuf is populated by GPS interrupt (null character??)
-    	//strcat(SDBuf, ADCBuf);
+    	//ADC0 = UV
+    	//ADC1 = TEMP
+    	sprintf(ADCBuf, "%d\n", ReadADC(ADC1_BASE));
+    	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+    	sprintf(UVBuf, "%d\n", ReadADC(ADC0_BASE));
 
-    	SDWrite(fileName, SDBuf);
+    	strcat(ADCBuf, UVBuf);
 
+    	UARTprintf("%s", ADCBuf);
 
-        ROM_IntMasterEnable();
 
 		//
 		// Turn on LED so we know something is happening
 		//
-        Configure_RGB(GREEN, BLINK_OFF);
+        Configure_RGB(GREEN);
 
 
 		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
