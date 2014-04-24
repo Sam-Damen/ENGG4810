@@ -335,8 +335,27 @@ Setup(void)
     //
     // Enable GPIO for UV
     //
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
-    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, UV_PIN);
+    //ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+    //ROM_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, UV_PIN);
+
+    //Different Pin for PCB (doesn't work with SD)
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_5);
+
+    //Enable the sensor
+    //GPIOPinWrite(GPIO_PORTE_BASE, UV_PIN, UV_PIN);
+    ROM_GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_5, GPIO_PIN_5);
+#endif
+
+#ifdef PR_EN
+
+    //For the RST and SHDN pins
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
+    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_6);
+
+    //Enable the Pressure Sensor (Active High) PIND7 doesn't work??
+    ROM_GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_6, 0xFF);
+    //also pin 6
 #endif
 
     //
@@ -346,7 +365,14 @@ Setup(void)
     ROM_FPULazyStackingEnable();
 }
 
+void
+SysTickHandler(void)
+{
+    //
+    // Call the FatFs tick timer.
+    //
 
+}
 
 //*****************************************************************************
 //
@@ -374,17 +400,14 @@ main(void)
 
 #ifdef I2C_EN
     Configure_I2C();
-    MMA8452QSetup();
+    //MMA8452QSetup();
+
 #endif
 
 #ifdef SD_EN
     fileName = Configure_SD();
 #endif
 
-#ifdef UV_EN
-    //Enable UV Sensor
-    GPIOPinWrite(GPIO_PORTE_BASE, UV_PIN, UV_PIN);
-#endif
 
 	ROM_SysCtlDelay(SysCtlClockGet() / 12 );
 
@@ -395,7 +418,7 @@ main(void)
 
     while(1)
     {
-
+/*
     	if (GPS_Flag) {
     		ROM_IntMasterDisable();
     		strcat(SDBuf, ADCBuf);
@@ -404,17 +427,22 @@ main(void)
     		memset(&SDBuf[0], 0, sizeof(SDBuf));
     		ROM_IntMasterEnable();
     	}
-
+*/
 
     	//ADC0 = UV
     	//ADC1 = TEMP
-    	sprintf(ADCBuf, "%d\n", ReadADC(ADC1_BASE));
-    	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-    	sprintf(UVBuf, "%d\n", ReadADC(ADC0_BASE));
+    	//sprintf(ADCBuf, "%d\n", ReadADC(ADC1_BASE));
+    	//ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+    	//sprintf(UVBuf, "%d\n", ReadADC(ADC1_BASE));
 
-    	strcat(ADCBuf, UVBuf);
+    	//strcat(ADCBuf, UVBuf);
 
-    	UARTprintf("%s", ADCBuf);
+    	//Tell Pressure Sensor to Get Data
+    	//I2CWrite(0x60, 0x12, 0x00);
+
+
+
+    	//UARTprintf("%d\n", I2CRead());
 
 
 		//

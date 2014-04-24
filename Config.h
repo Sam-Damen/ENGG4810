@@ -8,16 +8,19 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
-//Use to turn parts of the project on or off
+//System Resources
 
-#define SD_EN
-#define LED_EN
-//#define I2C_EN
-#define ADC_EN
-#define UART_EN
+#define 		LED_EN
+#define 		I2C_EN
+//#define 		ADC_EN
+#define 		UART_EN
 
-#define GPS_EN
-#define UV_EN
+//Hardware Peripherals
+
+//#define 		GPS_EN
+//#define 		SD_EN
+//#define		UV_EN
+#define 		PR_EN
 
 
 // Defines for Various Pins

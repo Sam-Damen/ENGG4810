@@ -57,7 +57,7 @@ Configure_I2C(void)
     //
     // Perform search of all addresses on the line
 	//
-    //I2CBusScan(I2C0_BASE);
+    I2CBusScan(I2C0_BASE);
 
 }
 
