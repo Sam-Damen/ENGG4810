@@ -15,7 +15,7 @@
 //*****************************************************************************
 
 #define ACCEL_ADDR 		0x1D
-#define PRESS_ADDR		0x60
+#define PRES_ADDR		0x60
 #define CTRL_REG 		0x2A
 #define WHO_AM_I		0x0D
 #define XYZ_CONFIG		0x0E

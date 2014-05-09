@@ -2,7 +2,7 @@
 //
 //	ENGG4810 TP2 Firmware
 //	Team 22
-//  By Jack McKinnon
+//
 //
 //*****************************************************************************
 
@@ -11,14 +11,17 @@
 #include <string.h>
 #include <stdio.h>
 #include "inc/hw_memmap.h"
+#include "inc/hw_ints.h"
 #include "driverlib/fpu.h"
 #include "driverlib/gpio.h"
 #include "driverlib/interrupt.h"
+#include "driverlib/timer.h"
 #include "driverlib/pin_map.h"
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
 #include "driverlib/systick.h"
 #include "driverlib/uart.h"
+
 #include "utils/cmdline.h"
 #include "utils/uartstdio.h"
 #include "fatfs/src/ff.h"
@@ -31,8 +34,6 @@
 #include "ADC.h"
 #include "UART.h"
 #include "LED.h"
-
-
 
 
 //*****************************************************************************
@@ -224,7 +225,7 @@ SDWrite(const char * file, char * data)
 	iFResult = f_write(&FilObj, data, strlen(data), &bytesWritten);
 	if(iFResult != FR_OK)
 	{
-		UARTprintf("\n %s", StringFromFResult(iFResult) );
+		UARTprintf("Write Error: %s\n", StringFromFResult(iFResult) );
 	}
 
 	//
@@ -246,11 +247,12 @@ SDWrite(const char * file, char * data)
 //*****************************************************************************
 
 const char *
-Configure_SD(void) {
+Configure_SD(char * gpsData) {
 
 	FRESULT iFResult;
 	uint32_t count = 0;
 	static char fileName[10];
+	static char date[20];
 
 
     //
@@ -287,21 +289,50 @@ Configure_SD(void) {
 			}
 		}
 	}
+
+	//Get date value out of GPS
+	strncpy(date, &SDBuf[25], 6);
+	date[6] = '\0';
+	UARTprintf("SDConfig Date: %s", date);
+
+
 	//Create Filename and file
-	sprintf(fileName, "Log_%d.txt", count + 1);
-	iFResult = f_open(&FilObj,fileName, FA_WRITE | FA_CREATE_ALWAYS);
+	sprintf(fileName, "_%d.txt", count + 1);
+	strcat(date,fileName);
+
+	UARTprintf("SDFilename %s\r\n", date);
+
+	iFResult = f_open(&FilObj,date, FA_WRITE | FA_CREATE_ALWAYS);
     if(iFResult != FR_OK)
     {
         UARTprintf("Create file error: %s\n", StringFromFResult(iFResult));
     }
     f_close(&FilObj);
 
-    return fileName;
+    return date;
 }
 
 
 #endif
 
+
+//*****************************************************************************
+//
+// Enter and Configure Deep Sleep Mode
+//
+//*****************************************************************************
+
+void
+enterSleep(void)
+{
+
+
+
+	//Enter Deep Sleep Mode
+	ROM_SysCtlDeepSleep();
+
+
+}
 
 
 
@@ -315,9 +346,10 @@ void
 Setup(void)
 {
     //
-    // Set the clocking to run from the PLL at 50MHz
-    //
-    ROM_SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN |
+    // Set the clocking to run from the PLL at 10MHz
+    // 200MHz/ SYSDIV_#
+
+	ROM_SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN |
                        SYSCTL_XTAL_16MHZ);
 
 
@@ -330,6 +362,9 @@ Setup(void)
     Configure_RGB(BLUE);
     RGBEnable();
 #endif
+
+
+
 
 #ifdef UV_EN
     //
@@ -355,14 +390,18 @@ Setup(void)
 
     //Enable the Pressure Sensor (Active High) PIND7 doesn't work??
     ROM_GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_6, 0xFF);
-    //also pin 6
+
+
 #endif
+
 
     //
     //Enable lazy stacking for interrupt handlers
     //
     ROM_FPUEnable();
     ROM_FPULazyStackingEnable();
+
+
 }
 
 void
@@ -373,6 +412,8 @@ SysTickHandler(void)
     //
 
 }
+
+
 
 //*****************************************************************************
 //
@@ -387,6 +428,8 @@ main(void)
 	char ADCBuf[11];
 	char UVBuf[5];
 
+	uint8_t fileCreated = 0;
+
     Setup();
 
 
@@ -398,14 +441,12 @@ main(void)
     Configure_UART();
 #endif
 
+
+
 #ifdef I2C_EN
     Configure_I2C();
     //MMA8452QSetup();
 
-#endif
-
-#ifdef SD_EN
-    fileName = Configure_SD();
 #endif
 
 
@@ -416,36 +457,58 @@ main(void)
     //
     ROM_IntMasterEnable();
 
+
+    uint8_t powerSave[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x01, 0x22, 0x92 };
+    uint8_t powerHigh[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x00, 0x21, 0x91 };
+
+    UARTprintf("ENGG4810 TP2\r\n");
+
+
     while(1)
     {
+
 /*
     	if (GPS_Flag) {
     		ROM_IntMasterDisable();
-    		strcat(SDBuf, ADCBuf);
-    		SDWrite(fileName, SDBuf);
+
+    		UARTprintf("time? %c\r\n", SDBuf[7]);
+
+#ifdef SD_EN
+    		if (! fileCreated) {
+    			//Wait until GPS Data to create log file
+    			if (SDBuf[7] != ',') {
+    				fileName = Configure_SD(SDBuf);
+    				fileCreated = 1;
+    				UARTprintf("fileMade\r\n");
+    			}
+
+    		} else {
+    			SDWrite(fileName, SDBuf);
+    		}
+#endif
+
+    		UARTprintf("%s", SDBuf);
+
+    		//strcat(SDBuf, ADCBuf);
+
     		GPS_Flag = 0;
     		memset(&SDBuf[0], 0, sizeof(SDBuf));
+
     		ROM_IntMasterEnable();
     	}
+
+
 */
 
-    	//ADC0 = UV
-    	//ADC1 = TEMP
-    	//sprintf(ADCBuf, "%d\n", ReadADC(ADC1_BASE));
+
+    	//sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
     	//ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-    	//sprintf(UVBuf, "%d\n", ReadADC(ADC1_BASE));
+    	//sprintf(UVBuf, "%d\n", ReadADC(UV_ADC));
 
     	//strcat(ADCBuf, UVBuf);
 
-    	//Tell Pressure Sensor to Get Data
-    	//I2CWrite(0x60, 0x12, 0x00);
 
-
-
-    	//UARTprintf("%d\n", I2CRead());
-
-
-		//
+    	//
 		// Turn on LED so we know something is happening
 		//
         Configure_RGB(GREEN);

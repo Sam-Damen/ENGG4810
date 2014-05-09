@@ -68,7 +68,7 @@ UARTIntHandler(void)
         // Read the next character from the UART1 and write it to buffer for printing
         //
     	c = (unsigned char) ROM_UARTCharGetNonBlocking(UART1_BASE);
-    	ROM_UARTCharPutNonBlocking(UART0_BASE,c);
+    	//ROM_UARTCharPutNonBlocking(UART0_BASE,c);
     	SDBuf[i] = c;
     	i++;
     	//Got all of the data (GPS appends \r)
@@ -147,6 +147,25 @@ Configure_UART(void)
 }
 
 
+//*****************************************************************************
+//
+// Send a string to the UART.
+//
+//*****************************************************************************
+void
+UARTSend(const uint8_t *pui8Buffer, uint32_t ui32Count)
+{
+    //
+    // Loop while there are more characters to send.
+    //
+    while(ui32Count--)
+    {
+        //
+        // Write the next character to the UART.
+        //
+        ROM_UARTCharPutNonBlocking(UART1_BASE, *pui8Buffer++);
+    }
+}
 
 
 

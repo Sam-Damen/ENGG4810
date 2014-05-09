@@ -20,12 +20,18 @@
 //#define 		GPS_EN
 //#define 		SD_EN
 //#define		UV_EN
-#define 		PR_EN
+//#define 		PR_EN
 
 
-// Defines for Various Pins
+// Defines for Various pins
 
 #define UV_PIN GPIO_PIN_4
+
+
+// Defines for Others
+
+
+
 
 
 #endif /* CONFIG_H_ */
