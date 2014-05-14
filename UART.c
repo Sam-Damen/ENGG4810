@@ -69,13 +69,16 @@ UARTIntHandler(void)
         //
     	c = (unsigned char) ROM_UARTCharGetNonBlocking(UART1_BASE);
     	//ROM_UARTCharPutNonBlocking(UART0_BASE,c);
+
     	SDBuf[i] = c;
     	i++;
     	//Got all of the data (GPS appends \r)
     	if (c == '\r') {
     		GPS_Flag = 1;
     		i = 0;
+
     	}
+
     }
 
 
@@ -163,7 +166,7 @@ UARTSend(const uint8_t *pui8Buffer, uint32_t ui32Count)
         //
         // Write the next character to the UART.
         //
-        ROM_UARTCharPutNonBlocking(UART1_BASE, *pui8Buffer++);
+        ROM_UARTCharPut(UART1_BASE, *pui8Buffer++);
     }
 }
 

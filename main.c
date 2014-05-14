@@ -17,6 +17,7 @@
 #include "driverlib/interrupt.h"
 #include "driverlib/timer.h"
 #include "driverlib/pin_map.h"
+#include "driverlib/pwm.h"
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
 #include "driverlib/systick.h"
@@ -35,6 +36,8 @@
 #include "UART.h"
 #include "LED.h"
 
+
+#define GPIO_PB6_M0PWM0         0x00011804
 
 //*****************************************************************************
 //
@@ -290,10 +293,10 @@ Configure_SD(char * gpsData) {
 		}
 	}
 
-	//Get date value out of GPS
+	//Get date value out of GPS (Only works with limited fix eg time + date but no gps data)
 	strncpy(date, &SDBuf[25], 6);
 	date[6] = '\0';
-	UARTprintf("SDConfig Date: %s", date);
+	UARTprintf("SDConfig Date: %s\r\n", date);
 
 
 	//Create Filename and file
@@ -312,7 +315,6 @@ Configure_SD(char * gpsData) {
     return date;
 }
 
-
 #endif
 
 
@@ -325,9 +327,6 @@ Configure_SD(char * gpsData) {
 void
 enterSleep(void)
 {
-
-
-
 	//Enter Deep Sleep Mode
 	ROM_SysCtlDeepSleep();
 
@@ -349,7 +348,7 @@ Setup(void)
     // Set the clocking to run from the PLL at 10MHz
     // 200MHz/ SYSDIV_#
 
-	ROM_SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN |
+	ROM_SysCtlClockSet(SYSCTL_SYSDIV_20 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN |
                        SYSCTL_XTAL_16MHZ);
 
 
@@ -363,23 +362,16 @@ Setup(void)
     RGBEnable();
 #endif
 
-
-
-
 #ifdef UV_EN
     //
     // Enable GPIO for UV
     //
-    //ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
-    //ROM_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, UV_PIN);
-
-    //Different Pin for PCB (doesn't work with SD)
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
-    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_5);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, UV_PIN);
 
     //Enable the sensor
-    //GPIOPinWrite(GPIO_PORTE_BASE, UV_PIN, UV_PIN);
-    ROM_GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_5, GPIO_PIN_5);
+    GPIOPinWrite(GPIO_PORTE_BASE, UV_PIN, UV_PIN);
+
 #endif
 
 #ifdef PR_EN
@@ -388,8 +380,41 @@ Setup(void)
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_6);
 
-    //Enable the Pressure Sensor (Active High) PIND7 doesn't work??
-    ROM_GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_6, 0xFF);
+    //Enable the Pressure Sensor (Active High)
+    ROM_GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_6, GPIO_PIN_6);
+
+
+#endif
+
+#ifdef SPEAK_EN
+
+    //Set PWM Clock
+    ROM_SysCtlPWMClockSet(SYSCTL_PWMDIV_1);
+
+    //Enable PWM and Pins
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM0);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+
+    //Set PWM
+    ROM_GPIOPinConfigure(GPIO_PB6_M0PWM0);
+    ROM_GPIOPinTypePWM(GPIO_PORTB_BASE, GPIO_PIN_6);
+
+    //Config Frequency roughly 600Hz
+    PWMGenConfigure(PWM0_BASE, PWM_GEN_0, PWM_GEN_MODE_UP_DOWN |
+                       PWM_GEN_MODE_NO_SYNC);
+
+    PWMGenPeriodSet(PWM0_BASE, PWM_GEN_0, 15000);
+
+    //Duty Cycle 50%
+    PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0,
+                     PWMGenPeriodGet(PWM0_BASE, PWM_OUT_0) / 2);
+
+
+    //Enable Pin Output
+    PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, true);
+
+    //Enable PWM
+    PWMGenEnable(PWM0_BASE, PWM_GEN_0);
 
 
 #endif
@@ -401,8 +426,11 @@ Setup(void)
     ROM_FPUEnable();
     ROM_FPULazyStackingEnable();
 
-
 }
+
+
+//We need this systick handler when the SD card is not running
+
 
 void
 SysTickHandler(void)
@@ -412,6 +440,7 @@ SysTickHandler(void)
     //
 
 }
+
 
 
 
@@ -428,6 +457,10 @@ main(void)
 	char ADCBuf[11];
 	char UVBuf[5];
 
+    uint8_t powerSave[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x01, 0x22, 0x92 };
+    uint8_t powerHigh[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x00, 0x21, 0x91 };
+    uint8_t rate1Hz[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xE8, 0x03, 0x01, 0x00, 0x01, 0x00, 0x01, 0x39 };
+
 	uint8_t fileCreated = 0;
 
     Setup();
@@ -439,9 +472,8 @@ main(void)
 
 #ifdef UART_EN
     Configure_UART();
+    UARTprintf("ENGG4810\n");
 #endif
-
-
 
 #ifdef I2C_EN
     Configure_I2C();
@@ -452,16 +484,15 @@ main(void)
 
 	ROM_SysCtlDelay(SysCtlClockGet() / 12 );
 
+
+
+
+   pressRead();
+
     //
     // Enable Interrupts
     //
     ROM_IntMasterEnable();
-
-
-    uint8_t powerSave[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x01, 0x22, 0x92 };
-    uint8_t powerHigh[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x00, 0x21, 0x91 };
-
-    UARTprintf("ENGG4810 TP2\r\n");
 
 
     while(1)
@@ -471,41 +502,41 @@ main(void)
     	if (GPS_Flag) {
     		ROM_IntMasterDisable();
 
-    		UARTprintf("time? %c\r\n", SDBuf[7]);
 
 #ifdef SD_EN
+
     		if (! fileCreated) {
     			//Wait until GPS Data to create log file
     			if (SDBuf[7] != ',') {
     				fileName = Configure_SD(SDBuf);
     				fileCreated = 1;
-    				UARTprintf("fileMade\r\n");
+    				UARTprintf("\r\nfileMade\r\n");
+    				//Turn on Powersave mode
+    				UARTSend(powerSave, sizeof(powerSave));
+
     			}
 
-    		} else {
+    		} else if(fileCreated) {
+
+    			//add in check for only rmc string
+
+    		    sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
+    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+    			sprintf(UVBuf, "%d\n", ReadADC(UV_ADC));
+    			strcat(ADCBuf, UVBuf);
+    			strcat(SDBuf, ADCBuf);
     			SDWrite(fileName, SDBuf);
+
     		}
-#endif
 
     		UARTprintf("%s", SDBuf);
-
-    		//strcat(SDBuf, ADCBuf);
-
     		GPS_Flag = 0;
     		memset(&SDBuf[0], 0, sizeof(SDBuf));
-
+#endif
     		ROM_IntMasterEnable();
     	}
 
-
 */
-
-
-    	//sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
-    	//ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-    	//sprintf(UVBuf, "%d\n", ReadADC(UV_ADC));
-
-    	//strcat(ADCBuf, UVBuf);
 
 
     	//

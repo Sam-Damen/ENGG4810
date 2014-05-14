@@ -19,17 +19,18 @@
 
 //#define 		GPS_EN
 //#define 		SD_EN
-//#define		UV_EN
-//#define 		PR_EN
+//#define			UV_EN
+#define 		PR_EN
+//#define		SPEAK_EN
 
 
 // Defines for Various pins
 
-#define UV_PIN GPIO_PIN_4
+#define UV_PIN 		GPIO_PIN_4
+#define SPEAK_PIN	GPIO_PIN_6
 
 
 // Defines for Others
-
 
 
 

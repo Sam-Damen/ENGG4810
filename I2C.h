@@ -31,6 +31,7 @@ extern unsigned long I2CBusScan(unsigned long ulI2CBase);
 extern uint32_t I2CRead(uint8_t ADDR, uint8_t REGADDR);
 extern void I2CWrite(uint8_t deviceAdd, uint8_t regAdd, uint8_t data);
 extern void MMA8452QSetup(void);
+extern uint32_t pressRead(void);
 
 
 

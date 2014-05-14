@@ -57,7 +57,7 @@ Configure_I2C(void)
     //
     // Perform search of all addresses on the line
 	//
-    I2CBusScan(I2C0_BASE);
+    //I2CBusScan(I2C0_BASE);
 
 }
 
@@ -106,13 +106,18 @@ I2CBusScan(unsigned long ulI2CBase)
 		//
 		// Make some delay
 		//
-		ROM_SysCtlDelay(500000);
+		ROM_SysCtlDelay(500);
 
 		//
 		// Read the I2C Master Control/Status (I2CMCS) Register to a local
 		// variable
 		//
 		ucerrorstate = ROM_I2CMasterErr(ulI2CBase);
+
+		//Check accelerometer address
+		if(ucProbeAdress == 19) {
+			UARTprintf("%d\n", ucerrorstate);
+		}
 
 		//
 		// Examining the content I2C Master Control/Status (I2CMCS) Register
@@ -121,6 +126,7 @@ I2CBusScan(unsigned long ulI2CBase)
 		//
 		if(ucerrorstate & I2C_MASTER_ERR_ADDR_ACK)
 		{
+
 			//
 			// device at selected address did not acknowledge --> there's no device
 			// with this address present on the I2C bus
@@ -297,6 +303,58 @@ MMA8452QSetup(void)
 
 
 	ROM_SysCtlDelay(ROM_SysCtlClockGet() / 12 );
+
+}
+
+uint32_t
+pressRead(void)
+{
+	//Temp and Press Readings from sensor
+	uint32_t Padc_MSB, Padc_LSB, Tadc_MSB, Tadc_LSB;
+
+	//Combined Temp and Press Readings
+	uint16_t Padc, Tadc;
+
+	//Coeffcients
+	uint32_t a0_MSB, a0_LSB, b1_MSB, b1_LSB, b2_MSB, b2_LSB, c12_MSB, c12_LSB;
+
+	//Combined Coeffcients
+	uint32_t aa0, bb1, bb2, cc12;
+
+	//Tell Pressure Sensor to Get Data
+	I2CWrite(PRES_ADDR, 0x12, 0x00);
+
+	ROM_SysCtlDelay(ROM_SysCtlClockGet() / 6 );
+
+	//Read the values
+	Padc_MSB =  I2CRead(PRES_ADDR, 0x00);
+	Padc_LSB =  I2CRead(PRES_ADDR, 0x01);
+	Tadc_MSB =  I2CRead(PRES_ADDR, 0x02);
+	Tadc_LSB =  I2CRead(PRES_ADDR, 0x03);
+
+	a0_MSB =  I2CRead(PRES_ADDR, 0x04);
+	a0_LSB =  I2CRead(PRES_ADDR, 0x05);
+	b1_MSB =  I2CRead(PRES_ADDR, 0x06);
+	b1_LSB =  I2CRead(PRES_ADDR, 0x07);
+	b2_MSB =  I2CRead(PRES_ADDR, 0x08);
+	b2_LSB =  I2CRead(PRES_ADDR, 0x09);
+	c12_MSB =  I2CRead(PRES_ADDR, 0x0A);
+	c12_LSB =  I2CRead(PRES_ADDR, 0x0B);
+
+	//Combine MSB and LSB to full reading
+	Padc = ((Padc_MSB << 8) + Padc_LSB) >> 6;
+	Tadc = ((Tadc_MSB << 8) + Tadc_LSB) >> 6;
+
+
+	 aa0 = ((a0_MSB  << 8) + a0_LSB);
+     bb1 = ((b1_MSB << 8) + b1_LSB);
+     bb2 = ((b2_MSB << 8) + b2_LSB);
+	 cc12 = ((c12_MSB << 8) + c12_LSB);
+
+
+	UARTprintf("Tadc %d\n", Tadc);
+	UARTprintf("Padc %d\n", Padc);
+	UARTprintf("a0: %d \nb1: %d \nb2: %d \nc12: %d \n", aa0, bb1, bb2, cc12);
 
 }
 
