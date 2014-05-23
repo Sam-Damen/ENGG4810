@@ -39,6 +39,7 @@
 
 #define GPIO_PB6_M0PWM0         0x00011804
 
+
 //*****************************************************************************
 //
 // The error routine that is called if the driver library encounters an error.
@@ -78,7 +79,7 @@ static FIL FilObj;
 // Write Buffer for SD card
 //
 //*****************************************************************************
-char SDBuf[100];
+char SDBuf[150] = {0};
 int GPS_Flag = 0;
 
 //*****************************************************************************
@@ -190,6 +191,16 @@ SysTickHandler(void)
 }
 
 
+void
+SDerror(void)
+{
+	Configure_RGB(YELLOW);
+	while(1);
+
+
+}
+
+
 //*****************************************************************************
 //
 // SD card write function
@@ -215,6 +226,7 @@ SDWrite(const char * file, char * data)
 	if(iFResult != FR_OK)
 	{
 		UARTprintf("\n %s", StringFromFResult(iFResult) );
+		SDerror();
 	}
 
 	//
@@ -229,6 +241,7 @@ SDWrite(const char * file, char * data)
 	if(iFResult != FR_OK)
 	{
 		UARTprintf("Write Error: %s\n", StringFromFResult(iFResult) );
+		SDerror();
 	}
 
 	//
@@ -243,6 +256,7 @@ SDWrite(const char * file, char * data)
 
 }
 
+
 //*****************************************************************************
 //
 // Configure the SD Card
@@ -250,13 +264,12 @@ SDWrite(const char * file, char * data)
 //*****************************************************************************
 
 const char *
-Configure_SD(char * gpsData) {
+Configure_SD(void)
+{
 
 	FRESULT iFResult;
 	uint32_t count = 0;
 	static char fileName[10];
-	static char date[20];
-
 
     //
     // Enable the peripheral.
@@ -277,6 +290,7 @@ Configure_SD(char * gpsData) {
     if(iFResult != FR_OK)
     {
         UARTprintf("f_mount error: %s\n", StringFromFResult(iFResult));
+		SDerror();
     }
 
     //
@@ -293,26 +307,18 @@ Configure_SD(char * gpsData) {
 		}
 	}
 
-	//Get date value out of GPS (Only works with limited fix eg time + date but no gps data)
-	strncpy(date, &SDBuf[25], 6);
-	date[6] = '\0';
-	UARTprintf("SDConfig Date: %s\r\n", date);
-
-
 	//Create Filename and file
-	sprintf(fileName, "_%d.txt", count + 1);
-	strcat(date,fileName);
+	sprintf(fileName, "LOG_%d.txt", count + 1);
 
-	UARTprintf("SDFilename %s\r\n", date);
-
-	iFResult = f_open(&FilObj,date, FA_WRITE | FA_CREATE_ALWAYS);
+	iFResult = f_open(&FilObj,fileName, FA_WRITE | FA_CREATE_ALWAYS);
     if(iFResult != FR_OK)
     {
         UARTprintf("Create file error: %s\n", StringFromFResult(iFResult));
+        SDerror();
     }
     f_close(&FilObj);
 
-    return date;
+    return fileName;
 }
 
 #endif
@@ -327,8 +333,37 @@ Configure_SD(char * gpsData) {
 void
 enterSleep(void)
 {
-	//Enter Deep Sleep Mode
-	ROM_SysCtlDeepSleep();
+
+	//
+	// Keep Key Peripherals Enabled
+	//
+	ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_UART1);
+	ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOB);
+	//For accel interrupt
+	ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOE);
+
+	//
+	// 	Enable Clock Gating
+	//
+	ROM_SysCtlPeripheralClockGating(1);
+
+	//
+	// Reduce Voltage & Power
+	//
+	SysCtlLDOSleepSet(SYSCTL_LDO_0_90V);
+	SysCtlSleepPowerSet(SYSCTL_SRAM_LOW_POWER | SYSCTL_FLASH_LOW_POWER);
+
+	//
+	// Turn off UV/MPL
+	//
+	//mpl = PD6
+	//uv = PE4
+
+	//Ensure LED is off (to stop interrupts)
+	RGBDisable();
+
+	//Enter Sleep Mode
+	ROM_SysCtlSleep();
 
 
 }
@@ -357,9 +392,10 @@ Setup(void)
     //Enable GIPO for RGB
     //
     RGBInit(0);
-    RGBIntensitySet(0.5f);
+    RGBIntensitySet(0.2f);
     Configure_RGB(BLUE);
-    RGBEnable();
+    RGBBlinkRateSet(0.7f);
+    //RGBEnable();
 #endif
 
 #ifdef UV_EN
@@ -419,6 +455,23 @@ Setup(void)
 
 #endif
 
+#ifdef WAKE_MOV
+
+    //Set the pin as input
+    ROM_GPIOPinTypeGPIOInput(GPIO_PORTE_BASE, GPIO_PIN_0);
+
+    //Setup Pin Interrupt Handler PE0
+    ROM_GPIOIntTypeSet(GPIO_PORTE_BASE, GPIO_PIN_0, GPIO_RISING_EDGE);
+
+    // enable interrupt on pins
+    GPIOPinIntEnable(GPIO_PORTE_BASE, GPIO_PIN_0);
+
+    // enable interrupts on port B
+    IntEnable(INT_GPIOE);
+
+
+#endif
+
 
     //
     //Enable lazy stacking for interrupt handlers
@@ -432,6 +485,7 @@ Setup(void)
 //We need this systick handler when the SD card is not running
 
 
+/*
 void
 SysTickHandler(void)
 {
@@ -440,7 +494,7 @@ SysTickHandler(void)
     //
 
 }
-
+*/
 
 
 
@@ -456,10 +510,17 @@ main(void)
 	const char * fileName;
 	char ADCBuf[11];
 	char UVBuf[5];
+	char ACCLBuf[20];
+	char PRESSBuf[10];
+
+	int16_t ACCLdata[3] = {0};
+	uint16_t PRESSdata[2] = {0};
 
     uint8_t powerSave[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x01, 0x22, 0x92 };
     uint8_t powerHigh[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x00, 0x21, 0x91 };
-    uint8_t rate1Hz[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xE8, 0x03, 0x01, 0x00, 0x01, 0x00, 0x01, 0x39 };
+    uint8_t rate1Hz[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xD0, 0x07, 0x01, 0x00, 0x01, 0x00, 0xED, 0xBD };
+    uint8_t rate1min[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x60, 0xEA, 0x01, 0x00, 0x01, 0x00, 0x60, 0x8C };
+
 
 	uint8_t fileCreated = 0;
 
@@ -477,73 +538,93 @@ main(void)
 
 #ifdef I2C_EN
     Configure_I2C();
-    //MMA8452QSetup();
-
+    AccelSetup();
 #endif
-
 
 	ROM_SysCtlDelay(SysCtlClockGet() / 12 );
 
+	UARTSend(rate1Hz, sizeof(rate1Hz));
 
-
-
-   pressRead();
 
     //
     // Enable Interrupts
     //
     ROM_IntMasterEnable();
 
+    ROM_SysCtlDelay(SysCtlClockGet() / 6 );
+
+    //Use to Turn off/on SPEAK
+    PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, false);
 
     while(1)
     {
 
-/*
+
     	if (GPS_Flag) {
+
+
     		ROM_IntMasterDisable();
+
 
 
 #ifdef SD_EN
 
     		if (! fileCreated) {
-    			//Wait until GPS Data to create log file
-    			if (SDBuf[7] != ',') {
-    				fileName = Configure_SD(SDBuf);
+    			//Wait until GPS Fix to create log file
+    			if ( (SDBuf[18] == 'A')  ) {
+    				fileName = Configure_SD();
     				fileCreated = 1;
-    				UARTprintf("\r\nfileMade\r\n");
-    				//Turn on Powersave mode
-    				UARTSend(powerSave, sizeof(powerSave));
+    				UARTprintf("FIleMade\n");
+    				Configure_RGB(YELLOW);
 
+    				//Turn on Powersave mode
+    				//UARTSend(powerSave, sizeof(powerSave));
     			}
 
-    		} else if(fileCreated) {
+    		} else {
 
-    			//add in check for only rmc string
-
-    		    sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
+    			sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
     			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-    			sprintf(UVBuf, "%d\n", ReadADC(UV_ADC));
-    			strcat(ADCBuf, UVBuf);
-    			strcat(SDBuf, ADCBuf);
-    			SDWrite(fileName, SDBuf);
 
+    			sprintf(UVBuf, "%d\n", ReadADC(UV_ADC));
+    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+    			accelRead(ACCLdata);
+    			sprintf(ACCLBuf, "%d %d %d\n", ACCLdata[0], ACCLdata[1], ACCLdata[2]);
+    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+    			pressRead(PRESSdata);
+    			sprintf(PRESSBuf, "%d %d\n", PRESSdata[0], PRESSdata[1]);
+    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+    			strcat(SDBuf, ACCLBuf);
+    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+    			strcat(SDBuf, ADCBuf);
+    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+    			strcat(SDBuf, UVBuf);
+    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+    			strcat(SDBuf, PRESSBuf);
+    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+    			SDWrite(fileName, SDBuf);
     		}
 
-    		UARTprintf("%s", SDBuf);
     		GPS_Flag = 0;
+
     		memset(&SDBuf[0], 0, sizeof(SDBuf));
+    		memset(&ACCLBuf[0],0, sizeof(ACCLBuf));
+    		memset(&ADCBuf[0],0, sizeof(ADCBuf));
+    		memset(&UVBuf[0],0, sizeof(UVBuf));
+    		memset(&PRESSBuf[0],0, sizeof(PRESSBuf));
+
 #endif
     		ROM_IntMasterEnable();
+
     	}
 
-*/
 
-
-    	//
-		// Turn on LED so we know something is happening
-		//
-        Configure_RGB(GREEN);
-
+    	//enterSleep();
+    	Configure_RGB(GREEN);
 
 		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
 

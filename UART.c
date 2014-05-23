@@ -72,6 +72,7 @@ UARTIntHandler(void)
 
     	SDBuf[i] = c;
     	i++;
+
     	//Got all of the data (GPS appends \r)
     	if (c == '\r') {
     		GPS_Flag = 1;
@@ -129,6 +130,11 @@ Configure_UART(void)
     UARTStdioConfig(0, 115200, 16000000);
 
 #ifdef GPS_EN
+
+    //UARTClockSourceSet(UART1_BASE, UART_CLOCK_PIOSC);
+   // UARTStdioConfig(0, 38400, 16000000);
+
+
     ROM_UARTConfigSetExpClk(UART1_BASE, ROM_SysCtlClockGet(), 38400,
                             (UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
                              UART_CONFIG_PAR_NONE));
@@ -137,11 +143,10 @@ Configure_UART(void)
     UARTFIFOLevelSet(UART1_BASE, UART_FIFO_TX1_8, UART_FIFO_RX1_8);
 
 
+
     //
     // Enable UART & Master Interrupts
     //
-
-
     UARTIntRegister(UART1_BASE, UARTIntHandler);
     ROM_IntEnable(INT_UART1);
     ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT);

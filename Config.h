@@ -12,16 +12,17 @@
 
 #define 		LED_EN
 #define 		I2C_EN
-//#define 		ADC_EN
+#define 		ADC_EN
 #define 		UART_EN
 
 //Hardware Peripherals
 
-//#define 		GPS_EN
-//#define 		SD_EN
-//#define			UV_EN
+#define 		GPS_EN
+#define 		SD_EN
+#define			UV_EN
 #define 		PR_EN
-//#define		SPEAK_EN
+//#define			WAKE_MOV
+#define		SPEAK_EN
 
 
 // Defines for Various pins

@@ -114,10 +114,6 @@ I2CBusScan(unsigned long ulI2CBase)
 		//
 		ucerrorstate = ROM_I2CMasterErr(ulI2CBase);
 
-		//Check accelerometer address
-		if(ucProbeAdress == 19) {
-			UARTprintf("%d\n", ucerrorstate);
-		}
 
 		//
 		// Examining the content I2C Master Control/Status (I2CMCS) Register
@@ -271,13 +267,14 @@ I2CWrite(uint8_t deviceAdd, uint8_t regAdd, uint8_t data)
 //
 //*****************************************************************************
 void
-MMA8452QSetup(void)
+AccelSetup(void)
 {
     uint8_t ctrl;
 
-	if (I2CRead(ACCEL_ADDR, WHO_AM_I) != 0x2A ) {
+	if (I2CRead(ACCEL_ADDR, WHO_AM_I) != 0xE5 ) {
 	   	 UARTprintf("Could not Connect\r\n");
 	}
+
 
 	//
 	// Get Control Register Data
@@ -285,41 +282,31 @@ MMA8452QSetup(void)
 	ctrl = I2CRead(ACCEL_ADDR,CTRL_REG);
 
 	//
-	// Standby
+	// Enable Device  & +- 16g
 	//
-	I2CWrite(ACCEL_ADDR, CTRL_REG, ctrl & ~(0x01) );
+	I2CWrite(ACCEL_ADDR, CTRL_REG, ctrl  | (0x08) );
+	//I2CWrite(ACCEL_ADDR, CTRL_RATE, 0x08);
+	//may need to change to 0x07, for msb mode?
+	I2CWrite(ACCEL_ADDR, CTRL_RANGE, 0x03);
 
+/*
 	//
-	// Configure the registers while in standby
-	// +- 2g and 8bit mode
+	// Setup Click detection (all axis), INT1
 	//
-	I2CWrite(ACCEL_ADDR, XYZ_CONFIG, 0x00);
-	I2CWrite(ACCEL_ADDR, CTRL_REG, 0x02);
+	I2CWrite(ACCEL_ADDR, CLICK_THRESH, 0x70);
+	I2CWrite(ACCEL_ADDR, CLICK_DUR, 0x20);
+	I2CWrite(ACCEL_ADDR, CLICK_INT, 0x40);
 
-	//
-	// Active
-	//
-	I2CWrite(ACCEL_ADDR, CTRL_REG, ctrl | 0x01);
-
-
+*/
 	ROM_SysCtlDelay(ROM_SysCtlClockGet() / 12 );
 
 }
 
-uint32_t
-pressRead(void)
+void
+pressRead(uint16_t* data)
 {
 	//Temp and Press Readings from sensor
 	uint32_t Padc_MSB, Padc_LSB, Tadc_MSB, Tadc_LSB;
-
-	//Combined Temp and Press Readings
-	uint16_t Padc, Tadc;
-
-	//Coeffcients
-	uint32_t a0_MSB, a0_LSB, b1_MSB, b1_LSB, b2_MSB, b2_LSB, c12_MSB, c12_LSB;
-
-	//Combined Coeffcients
-	uint32_t aa0, bb1, bb2, cc12;
 
 	//Tell Pressure Sensor to Get Data
 	I2CWrite(PRES_ADDR, 0x12, 0x00);
@@ -332,6 +319,20 @@ pressRead(void)
 	Tadc_MSB =  I2CRead(PRES_ADDR, 0x02);
 	Tadc_LSB =  I2CRead(PRES_ADDR, 0x03);
 
+
+	//Combine MSB and LSB to full reading
+	data[0] = ((Padc_MSB << 8) + Padc_LSB) >> 6;
+	data[1] = ((Tadc_MSB << 8) + Tadc_LSB) >> 6;
+
+
+/*
+
+ 	//Coeffcients
+	uint32_t a0_MSB, a0_LSB, b1_MSB, b1_LSB, b2_MSB, b2_LSB, c12_MSB, c12_LSB;
+
+	//Combined Coeffcients
+	uint32_t aa0, bb1, bb2, cc12;
+
 	a0_MSB =  I2CRead(PRES_ADDR, 0x04);
 	a0_LSB =  I2CRead(PRES_ADDR, 0x05);
 	b1_MSB =  I2CRead(PRES_ADDR, 0x06);
@@ -341,23 +342,38 @@ pressRead(void)
 	c12_MSB =  I2CRead(PRES_ADDR, 0x0A);
 	c12_LSB =  I2CRead(PRES_ADDR, 0x0B);
 
-	//Combine MSB and LSB to full reading
-	Padc = ((Padc_MSB << 8) + Padc_LSB) >> 6;
-	Tadc = ((Tadc_MSB << 8) + Tadc_LSB) >> 6;
+	aa0 = ((a0_MSB  << 8) + a0_LSB);
+    bb1 = ((b1_MSB << 8) + b1_LSB);
+    bb2 = ((b2_MSB << 8) + b2_LSB);
+	cc12 = ((c12_MSB << 8) + c12_LSB);
 
+	UARTprintf("a0 - %d\n",aa0);
+	UARTprintf("b1 - %d\n",bb1);
+	UARTprintf("b2 - %d\n",bb2);
+	UARTprintf("c12 - %d\n",cc12);
 
-	 aa0 = ((a0_MSB  << 8) + a0_LSB);
-     bb1 = ((b1_MSB << 8) + b1_LSB);
-     bb2 = ((b2_MSB << 8) + b2_LSB);
-	 cc12 = ((c12_MSB << 8) + c12_LSB);
-
-
-	UARTprintf("Tadc %d\n", Tadc);
-	UARTprintf("Padc %d\n", Padc);
-	UARTprintf("a0: %d \nb1: %d \nb2: %d \nc12: %d \n", aa0, bb1, bb2, cc12);
+*/
 
 }
 
+void
+accelRead(int16_t* data)
+{
+
+	int16_t X_L, X_H, Y_L, Y_H, Z_H, Z_L;
+
+    X_L = I2CRead(ACCEL_ADDR, 0x32);
+    X_H = I2CRead(ACCEL_ADDR, 0x33);
+    Y_L = I2CRead(ACCEL_ADDR, 0x34);
+    Y_H = I2CRead(ACCEL_ADDR, 0x35);
+    Z_L = I2CRead(ACCEL_ADDR, 0x36);
+    Z_H = I2CRead(ACCEL_ADDR, 0x37);
+
+    data[0] = (X_H << 8) | X_L;
+    data[1] = (Y_H << 8) | Y_L;
+    data[2] = (Z_H << 8) | Z_L;
+
+}
 
 
 

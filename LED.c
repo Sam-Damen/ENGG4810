@@ -56,6 +56,13 @@ Configure_RGB(int Col)
 		RGBColorSet(Colours);
 		break;
 
+	case YELLOW:
+		Colours[0] = 0xFFFF;
+		Colours[1] = 0xFFFF;
+		Colours[2] = 0x0000;
+		RGBColorSet(Colours);
+		break;
+
 	default:
 		Colours[0] = 0xFFFF;
 		Colours[1] = 0xFFFF;
