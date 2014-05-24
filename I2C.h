@@ -31,6 +31,8 @@
 #define CLICK_DUR		0x21
 #define CLICK_THRESH	0x1D
 #define CLICK_INT		0x2E
+#define CLICK_MAP		0x2F
+#define CLICK_AXIS		0x2A
 
 #define PRES_ADDR		0x60
 

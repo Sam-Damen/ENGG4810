@@ -39,6 +39,7 @@
 
 #define GPIO_PB6_M0PWM0         0x00011804
 
+int ACCEL_Flag = 0;
 
 //*****************************************************************************
 //
@@ -195,8 +196,8 @@ void
 SDerror(void)
 {
 	Configure_RGB(YELLOW);
+	RGBEnable();
 	while(1);
-
 
 }
 
@@ -322,6 +323,28 @@ Configure_SD(void)
 }
 
 #endif
+
+
+
+//*****************************************************************************
+//
+// Accelerometer Interrupt Handler
+//
+//*****************************************************************************
+
+void
+GPIOEIntHandler(void)
+{
+
+	//Clear the interrupt
+	GPIOIntClear(GPIO_PORTE_BASE ,GPIO_PIN_0);
+
+	//Clear the Accel Interrupt
+	I2CRead(ACCEL_ADDR, 0x30);
+
+	//Set Flag so we know to wake up
+	ACCEL_Flag = 1;
+}
 
 
 //*****************************************************************************
@@ -464,7 +487,7 @@ Setup(void)
     ROM_GPIOIntTypeSet(GPIO_PORTE_BASE, GPIO_PIN_0, GPIO_RISING_EDGE);
 
     // enable interrupt on pins
-    GPIOPinIntEnable(GPIO_PORTE_BASE, GPIO_PIN_0);
+    GPIOIntEnable(GPIO_PORTE_BASE, GPIO_INT_PIN_0);
 
     // enable interrupts on port B
     IntEnable(INT_GPIOE);
@@ -516,12 +539,6 @@ main(void)
 	int16_t ACCLdata[3] = {0};
 	uint16_t PRESSdata[2] = {0};
 
-    uint8_t powerSave[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x01, 0x22, 0x92 };
-    uint8_t powerHigh[] = { 0xB5, 0x62, 0x06, 0x11, 0x02, 0x00, 0x08, 0x00, 0x21, 0x91 };
-    uint8_t rate1Hz[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0xD0, 0x07, 0x01, 0x00, 0x01, 0x00, 0xED, 0xBD };
-    uint8_t rate1min[] = { 0xB5, 0x62, 0x06, 0x08, 0x06, 0x00, 0x60, 0xEA, 0x01, 0x00, 0x01, 0x00, 0x60, 0x8C };
-
-
 	uint8_t fileCreated = 0;
 
     Setup();
@@ -541,41 +558,34 @@ main(void)
     AccelSetup();
 #endif
 
-	ROM_SysCtlDelay(SysCtlClockGet() / 12 );
-
-	UARTSend(rate1Hz, sizeof(rate1Hz));
-
-
     //
     // Enable Interrupts
     //
     ROM_IntMasterEnable();
 
-    ROM_SysCtlDelay(SysCtlClockGet() / 6 );
-
     //Use to Turn off/on SPEAK
     PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, false);
+
+    UARTSend(rate1Hz, sizeof(rate1Hz));
+    UARTSend(powerHigh, sizeof(powerHigh));
+
 
     while(1)
     {
 
+#ifdef SD_EN
 
     	if (GPS_Flag) {
-
-
     		ROM_IntMasterDisable();
-
-
-
-#ifdef SD_EN
 
     		if (! fileCreated) {
     			//Wait until GPS Fix to create log file
     			if ( (SDBuf[18] == 'A')  ) {
     				fileName = Configure_SD();
     				fileCreated = 1;
-    				UARTprintf("FIleMade\n");
+
     				Configure_RGB(YELLOW);
+    				ROM_SysCtlDelay(SysCtlClockGet() / 12 );
 
     				//Turn on Powersave mode
     				//UARTSend(powerSave, sizeof(powerSave));
@@ -592,6 +602,8 @@ main(void)
     			accelRead(ACCLdata);
     			sprintf(ACCLBuf, "%d %d %d\n", ACCLdata[0], ACCLdata[1], ACCLdata[2]);
     			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+    			UARTprintf("X %d Y %d Z %d\n", ACCLdata[0], ACCLdata[1], ACCLdata[2]);
 
     			pressRead(PRESSdata);
     			sprintf(PRESSBuf, "%d %d\n", PRESSdata[0], PRESSdata[1]);
@@ -617,10 +629,10 @@ main(void)
     		memset(&UVBuf[0],0, sizeof(UVBuf));
     		memset(&PRESSBuf[0],0, sizeof(PRESSBuf));
 
-#endif
     		ROM_IntMasterEnable();
-
     	}
+
+#endif
 
 
     	//enterSleep();

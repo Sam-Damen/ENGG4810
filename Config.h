@@ -21,8 +21,8 @@
 #define 		SD_EN
 #define			UV_EN
 #define 		PR_EN
-//#define			WAKE_MOV
-#define		SPEAK_EN
+#define			WAKE_MOV
+#define			SPEAK_EN
 
 
 // Defines for Various pins

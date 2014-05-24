@@ -27,6 +27,7 @@
 #include "inc/hw_types.h"
 
 #include "LED.h"
+#include "examples/boards/ek-tm4c123gxl/drivers/rgb.h"
 
 
 //*****************************************************************************
@@ -38,7 +39,6 @@ void ResetISR(void);
 static void NmiSR(void);
 static void FaultISR(void);
 static void IntDefaultHandler(void);
-extern void RGBBlinkIntHandler(void);
 
 //*****************************************************************************
 //
@@ -61,6 +61,8 @@ extern uint32_t __STACK_TOP;
 //
 //*****************************************************************************
 extern void SysTickHandler(void);
+extern void RGBBlinkIntHandler(void);
+extern void GPIOEIntHandler(void);
 
 //*****************************************************************************
 //
@@ -93,7 +95,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // GPIO Port B
     IntDefaultHandler,                      // GPIO Port C
     IntDefaultHandler,                      // GPIO Port D
-    IntDefaultHandler,                      // GPIO Port E
+    GPIOEIntHandler,                    	// GPIO Port E
     IntDefaultHandler,                      // UART0 Rx and Tx
     IntDefaultHandler,                      // UART1 Rx and Tx
     IntDefaultHandler,                      // SSI0 Rx and Tx
@@ -283,6 +285,7 @@ FaultISR(void)
     // Enter an infinite loop.
     //
 	Configure_RGB(0);
+	RGBEnable();
     while(1)
     {
     }
@@ -302,7 +305,7 @@ IntDefaultHandler(void)
     // Go into an infinite loop.
     //
 	Configure_RGB(0);
-
+	RGBEnable();
     while(1)
     {
     }

@@ -281,26 +281,35 @@ AccelSetup(void)
 	//
 	ctrl = I2CRead(ACCEL_ADDR,CTRL_REG);
 
-	//
-	// Enable Device  & +- 16g
-	//
-	I2CWrite(ACCEL_ADDR, CTRL_REG, ctrl  | (0x08) );
-	//I2CWrite(ACCEL_ADDR, CTRL_RATE, 0x08);
-	//may need to change to 0x07, for msb mode?
-	I2CWrite(ACCEL_ADDR, CTRL_RANGE, 0x03);
 
-/*
 	//
 	// Setup Click detection (all axis), INT1
 	//
-	I2CWrite(ACCEL_ADDR, CLICK_THRESH, 0x70);
+	I2CWrite(ACCEL_ADDR, CLICK_MAP, 0xBF);
+	I2CWrite(ACCEL_ADDR, CLICK_AXIS, 0x07);
+	I2CWrite(ACCEL_ADDR, CLICK_THRESH, 0x38);	//adjust for sensitivity
 	I2CWrite(ACCEL_ADDR, CLICK_DUR, 0x20);
-	I2CWrite(ACCEL_ADDR, CLICK_INT, 0x40);
+	I2CWrite(ACCEL_ADDR, CLICK_INT, 0xC0);
 
-*/
+
+
+	//
+	// Enable Device  & +- 16g & slower output rate
+	//
+	I2CWrite(ACCEL_ADDR, CTRL_RATE, 0x08);
+	I2CWrite(ACCEL_ADDR, CTRL_RANGE, 0x0B);
+	I2CWrite(ACCEL_ADDR, CTRL_REG, ctrl  | (0x08) );
+
+
 	ROM_SysCtlDelay(ROM_SysCtlClockGet() / 12 );
 
 }
+
+//*****************************************************************************
+//
+// Read from the Pressure Sensor
+//
+//*****************************************************************************
 
 void
 pressRead(uint16_t* data)
@@ -356,6 +365,12 @@ pressRead(uint16_t* data)
 
 }
 
+//*****************************************************************************
+//
+// Read from the Accelerometer
+//
+//*****************************************************************************
+
 void
 accelRead(int16_t* data)
 {
@@ -374,6 +389,7 @@ accelRead(int16_t* data)
     data[2] = (Z_H << 8) | Z_L;
 
 }
+
 
 
 
