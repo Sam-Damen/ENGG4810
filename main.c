@@ -29,6 +29,7 @@
 #include "fatfs/src/diskio.h"
 
 #include "examples/boards/ek-tm4c123gxl/drivers/rgb.h"
+#include "examples/boards/ek-tm4c123gxl/drivers/buttons.h"
 
 #include "Config.h"
 #include "I2C.h"
@@ -39,7 +40,9 @@
 
 #define GPIO_PB6_M0PWM0         0x00011804
 
+//Variables for Wake on Movement
 int ACCEL_Flag = 0;
+uint32_t AppState = 0;
 
 //*****************************************************************************
 //
@@ -73,7 +76,6 @@ static FATFS FatFs;
 static DIR DirObj;
 static FILINFO FilInfo;
 static FIL FilObj;
-
 
 //*****************************************************************************
 //
@@ -324,7 +326,50 @@ Configure_SD(void)
 
 #endif
 
+//*****************************************************************************
+//
+// Function to Collect & Write Data to SD
+//
+//*****************************************************************************
 
+void
+writeLog(const char * fileName)
+{
+	char ADCBuf[11];
+	char UVBuf[5];
+	char ACCLBuf[20];
+	char PRESSBuf[10];
+
+	int16_t ACCLdata[3] = {0};
+	uint16_t PRESSdata[2] = {0};
+
+	//Temperature
+	sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
+	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+	//UV Level
+	sprintf(UVBuf, "%d\n", ReadADC(UV_ADC));
+	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+	//Acceleration
+	accelRead(ACCLdata);
+	sprintf(ACCLBuf, "%d %d %d\n", ACCLdata[0], ACCLdata[1], ACCLdata[2]);
+	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+	//Pressure
+	pressRead(PRESSdata);
+	sprintf(PRESSBuf, "%d %d\n\n", PRESSdata[0], PRESSdata[1]);
+	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+	//Combine into one Buffer
+	strcat(SDBuf, ACCLBuf);
+	strcat(SDBuf, ADCBuf);
+	strcat(SDBuf, UVBuf);
+	strcat(SDBuf, PRESSBuf);
+
+	//Write to SD Card
+	SDWrite(fileName, SDBuf);
+}
 
 //*****************************************************************************
 //
@@ -344,6 +389,30 @@ GPIOEIntHandler(void)
 
 	//Set Flag so we know to wake up
 	ACCEL_Flag = 1;
+}
+
+
+//*****************************************************************************
+//
+// PushButton Interrupt Handler
+//
+//*****************************************************************************
+
+void
+GPIOFIntHandler(void)
+{
+	 static uint32_t deBounce;
+
+	GPIOIntClear(GPIO_PORTF_BASE, GPIO_PIN_4);
+
+	deBounce++;
+
+	//Toggle the App State, taking into account debouncing
+	if (deBounce >= 2) {
+		AppState ^= 1;
+		deBounce = 0;
+	}
+
 }
 
 
@@ -409,6 +478,12 @@ Setup(void)
 	ROM_SysCtlClockSet(SYSCTL_SYSDIV_20 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN |
                        SYSCTL_XTAL_16MHZ);
 
+    //
+    //Enable lazy stacking for interrupt handlers
+    //
+    ROM_FPUEnable();
+    ROM_FPULazyStackingEnable();
+
 
 #ifdef LED_EN
     //
@@ -417,8 +492,9 @@ Setup(void)
     RGBInit(0);
     RGBIntensitySet(0.2f);
     Configure_RGB(BLUE);
-    RGBBlinkRateSet(0.7f);
-    //RGBEnable();
+    //RGBBlinkRateSet(0.7f);
+    RGBEnable();
+
 #endif
 
 #ifdef UV_EN
@@ -493,15 +569,16 @@ Setup(void)
     IntEnable(INT_GPIOE);
 
 
+    //Also Configure the PushButton SW1
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
+    ROM_GPIOPinTypeGPIOInput(GPIO_PORTF_BASE, GPIO_PIN_4);
+    ROM_GPIOPadConfigSet(GPIO_PORTF_BASE, GPIO_PIN_4, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+    ROM_GPIOIntTypeSet(GPIO_PORTF_BASE, GPIO_PIN_4, GPIO_FALLING_EDGE);
+    GPIOIntEnable(GPIO_PORTF_BASE, GPIO_PIN_4);
+    IntEnable(INT_GPIOF);
+
+
 #endif
-
-
-    //
-    //Enable lazy stacking for interrupt handlers
-    //
-    ROM_FPUEnable();
-    ROM_FPULazyStackingEnable();
-
 }
 
 
@@ -529,20 +606,10 @@ SysTickHandler(void)
 int
 main(void)
 {
-
 	const char * fileName;
-	char ADCBuf[11];
-	char UVBuf[5];
-	char ACCLBuf[20];
-	char PRESSBuf[10];
-
-	int16_t ACCLdata[3] = {0};
-	uint16_t PRESSdata[2] = {0};
-
 	uint8_t fileCreated = 0;
 
     Setup();
-
 
 #ifdef ADC_EN
     Configure_ADC();
@@ -550,7 +617,6 @@ main(void)
 
 #ifdef UART_EN
     Configure_UART();
-    UARTprintf("ENGG4810\n");
 #endif
 
 #ifdef I2C_EN
@@ -563,82 +629,97 @@ main(void)
     //
     ROM_IntMasterEnable();
 
-    //Use to Turn off/on SPEAK
+    //Use to Turn off SPEAK
     PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, false);
 
-    UARTSend(rate1Hz, sizeof(rate1Hz));
     UARTSend(powerHigh, sizeof(powerHigh));
-
+    UARTSend(rate1Hz, sizeof(rate1Hz));
 
     while(1)
     {
 
-#ifdef SD_EN
-
-    	if (GPS_Flag) {
-    		ROM_IntMasterDisable();
-
-    		if (! fileCreated) {
-    			//Wait until GPS Fix to create log file
-    			if ( (SDBuf[18] == 'A')  ) {
-    				fileName = Configure_SD();
-    				fileCreated = 1;
-
-    				Configure_RGB(YELLOW);
-    				ROM_SysCtlDelay(SysCtlClockGet() / 12 );
-
-    				//Turn on Powersave mode
-    				//UARTSend(powerSave, sizeof(powerSave));
-    			}
-
-    		} else {
-
-    			sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
-    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-
-    			sprintf(UVBuf, "%d\n", ReadADC(UV_ADC));
-    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-
-    			accelRead(ACCLdata);
-    			sprintf(ACCLBuf, "%d %d %d\n", ACCLdata[0], ACCLdata[1], ACCLdata[2]);
-    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-
-    			UARTprintf("X %d Y %d Z %d\n", ACCLdata[0], ACCLdata[1], ACCLdata[2]);
-
-    			pressRead(PRESSdata);
-    			sprintf(PRESSBuf, "%d %d\n", PRESSdata[0], PRESSdata[1]);
-    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-
-    			strcat(SDBuf, ACCLBuf);
-    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-    			strcat(SDBuf, ADCBuf);
-    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-    			strcat(SDBuf, UVBuf);
-    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-    			strcat(SDBuf, PRESSBuf);
-    			ROM_SysCtlDelay(SysCtlClockGet() / 24 );
-
-    			SDWrite(fileName, SDBuf);
-    		}
-
-    		GPS_Flag = 0;
-
-    		memset(&SDBuf[0], 0, sizeof(SDBuf));
-    		memset(&ACCLBuf[0],0, sizeof(ACCLBuf));
-    		memset(&ADCBuf[0],0, sizeof(ADCBuf));
-    		memset(&UVBuf[0],0, sizeof(UVBuf));
-    		memset(&PRESSBuf[0],0, sizeof(PRESSBuf));
-
-    		ROM_IntMasterEnable();
-    	}
-
-#endif
-
-
-    	//enterSleep();
-    	Configure_RGB(GREEN);
-
 		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
 
+    	switch (AppState)
+    	{
+
+    	// 1min Sample Mode
+    	case 0:
+    		Configure_RGB(GREEN);
+    		//Configure_GPS(HIGH);
+    		if (GPS_Flag) {
+    			ROM_IntMasterDisable();
+
+        		if (! fileCreated) {
+        			//Wait until GPS Fix to create log file
+        			if ( (SDBuf[18] == 'A')  ) {
+        				fileName = Configure_SD();
+        				fileCreated = 1;
+        				//Know Log file created/ fix found
+        				Configure_RGB(YELLOW);
+        				ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+        				//Configure_GPS(1MIN);
+        				//Turn on Powersave mode
+        				//UARTSend(powerSave, sizeof(powerSave));
+        			}
+        		} else {
+        			//Handle cases moving from wake back to 1min
+        			if (SDBuf[18] == 'A') {
+        				writeLog(fileName);
+        			}
+        		}
+
+        		GPS_Flag = 0;
+        		memset(&SDBuf[0], 0, sizeof(SDBuf));
+
+    			ROM_IntMasterEnable();
+
+    		} else {
+    			//enterSleep();
+    		}
+    		break;
+
+
+    	// Wake on Movement Mode
+    	case 1:
+    		Configure_RGB(PINK);
+
+    		//Configure_GPS(WAKE);
+
+    		if (ACCEL_Flag) {
+
+    			if (! fileCreated) {
+    				fileName = Configure_SD();
+    				fileCreated = 1;
+    				Configure_RGB(YELLOW);
+    				ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+    			}
+    			if (fileCreated) {
+					//Ensure full RMC string is included
+    				if (GPS_Flag) {
+    					writeLog(fileName);
+						GPS_Flag = 0;
+						if ( (SDBuf[18] == 'A')  ) {
+							//Got a Fix so go back to sleep
+							ACCEL_Flag = 0;
+							//enterSleep();
+						}
+						memset(&SDBuf[0], 0, sizeof(SDBuf));
+    				}
+
+    				ACCEL_Flag = 0;
+
+    				//if 2 minutes have past
+    					//ACCEL_Flag = 0;
+    					//enterSleep();
+    			}
+
+
+
+    		} else {
+    			//enterSleep();
+    		}
+    		break;
+    	}
     }
 }

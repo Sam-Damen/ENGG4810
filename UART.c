@@ -74,7 +74,7 @@ UARTIntHandler(void)
     	i++;
 
     	//Got all of the data (GPS appends \r)
-    	if (c == '\r') {
+    	if (c == '\n') {
     		GPS_Flag = 1;
     		i = 0;
 
@@ -173,6 +173,21 @@ UARTSend(const uint8_t *pui8Buffer, uint32_t ui32Count)
         //
         ROM_UARTCharPut(UART1_BASE, *pui8Buffer++);
     }
+}
+
+
+
+//*****************************************************************************
+//
+// Use to perform multiple changes to the GPS module
+//
+//*****************************************************************************
+void
+Configure_GPS(uint32_t mode)
+{
+
+
+
 }
 
 

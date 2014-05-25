@@ -63,6 +63,7 @@ extern uint32_t __STACK_TOP;
 extern void SysTickHandler(void);
 extern void RGBBlinkIntHandler(void);
 extern void GPIOEIntHandler(void);
+extern void GPIOFIntHandler(void);
 
 //*****************************************************************************
 //
@@ -121,7 +122,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // Analog Comparator 2
     IntDefaultHandler,                      // System Control (PLL, OSC, BO)
     IntDefaultHandler,                      // FLASH Control
-    IntDefaultHandler,                      // GPIO Port F
+    GPIOFIntHandler,                  	    // GPIO Port F
     IntDefaultHandler,                      // GPIO Port G
     IntDefaultHandler,                      // GPIO Port H
     IntDefaultHandler,                      // UART2 Rx and Tx

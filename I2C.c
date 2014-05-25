@@ -24,6 +24,7 @@
 #include "utils/uartstdio.h"
 
 #include "I2C.h"
+#include "Config.h"
 
 
 
@@ -281,7 +282,7 @@ AccelSetup(void)
 	//
 	ctrl = I2CRead(ACCEL_ADDR,CTRL_REG);
 
-
+#ifdef WAKE_MOV
 	//
 	// Setup Click detection (all axis), INT1
 	//
@@ -291,7 +292,7 @@ AccelSetup(void)
 	I2CWrite(ACCEL_ADDR, CLICK_DUR, 0x20);
 	I2CWrite(ACCEL_ADDR, CLICK_INT, 0xC0);
 
-
+#endif
 
 	//
 	// Enable Device  & +- 16g & slower output rate

@@ -63,6 +63,20 @@ Configure_RGB(int Col)
 		RGBColorSet(Colours);
 		break;
 
+	case CYAN:
+		Colours[0] = 0x000;
+		Colours[1] = 0xFFFF;
+		Colours[2] = 0xFFFF;
+		RGBColorSet(Colours);
+		break;
+
+	case PINK:
+		Colours[0] = 0xFFFF;
+		Colours[1] = 0x0000;
+		Colours[2] = 0xFFFF;
+		RGBColorSet(Colours);
+		break;
+
 	default:
 		Colours[0] = 0xFFFF;
 		Colours[1] = 0xFFFF;
