@@ -29,7 +29,6 @@
 #include "fatfs/src/diskio.h"
 
 #include "examples/boards/ek-tm4c123gxl/drivers/rgb.h"
-#include "examples/boards/ek-tm4c123gxl/drivers/buttons.h"
 
 #include "Config.h"
 #include "I2C.h"
@@ -43,6 +42,8 @@
 //Variables for Wake on Movement
 int ACCEL_Flag = 0;
 uint32_t AppState = 0;
+int MIN_Flag = 1;
+uint32_t minCount = 0;
 
 //*****************************************************************************
 //
@@ -343,6 +344,11 @@ writeLog(const char * fileName)
 	int16_t ACCLdata[3] = {0};
 	uint16_t PRESSdata[2] = {0};
 
+    //
+    // Turn on LED
+    //
+    Configure_RGB(BLUE);
+
 	//Temperature
 	sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
 	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
@@ -401,20 +407,30 @@ GPIOEIntHandler(void)
 void
 GPIOFIntHandler(void)
 {
-	 static uint32_t deBounce;
-
 	GPIOIntClear(GPIO_PORTF_BASE, GPIO_PIN_4);
 
-	deBounce++;
+	//Debounce
+	ROM_SysCtlDelay(ROM_SysCtlClockGet() / 6);
 
-	//Toggle the App State, taking into account debouncing
-	if (deBounce >= 2) {
-		AppState ^= 1;
-		deBounce = 0;
-	}
+	AppState ^= 1;
 
 }
 
+//*****************************************************************************
+//
+// Timer Interrupt Handler
+//
+//*****************************************************************************
+
+void
+Timer0IntHandler(void)
+{
+	//Let program know 1 min has passed
+	ROM_TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+	MIN_Flag = 1;
+	UARTprintf("1MIN\n");
+	minCount++;
+}
 
 //*****************************************************************************
 //
@@ -427,23 +443,39 @@ enterSleep(void)
 {
 
 	//
-	// Keep Key Peripherals Enabled
+	// Keep Key Peripherals Enabled (Timer & Accel Interrupt)
 	//
-	ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_UART1);
-	ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOB);
-	//For accel interrupt
-	ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOE);
+
+
+	//Ensure timer & accel can wake the device
+	if (!AppState) {
+		ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_TIMER0);
+		ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOF);
+	} else {
+		ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_TIMER0);
+		ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOE);
+		ROM_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_GPIOF);
+	}
+
+	//Turn off other features
+	ROM_SysCtlPeripheralSleepDisable(SYSCTL_PERIPH_I2C0);
+	ROM_SysCtlPeripheralSleepDisable(SYSCTL_PERIPH_PWM0);
+	SysTickDisable();
 
 	//
-	// 	Enable Clock Gating
+	// 	Enable Clock Gating to turn off everything else
 	//
-	ROM_SysCtlPeripheralClockGating(1);
+	ROM_SysCtlPeripheralClockGating(true);
+
+
+
+	//Try manually turning things off
 
 	//
 	// Reduce Voltage & Power
 	//
-	SysCtlLDOSleepSet(SYSCTL_LDO_0_90V);
-	SysCtlSleepPowerSet(SYSCTL_SRAM_LOW_POWER | SYSCTL_FLASH_LOW_POWER);
+	//SysCtlLDOSleepSet(SYSCTL_LDO_0_90V);
+	//SysCtlSleepPowerSet(SYSCTL_SRAM_LOW_POWER | SYSCTL_FLASH_LOW_POWER);
 
 	//
 	// Turn off UV/MPL
@@ -452,14 +484,26 @@ enterSleep(void)
 	//uv = PE4
 
 	//Ensure LED is off (to stop interrupts)
+	RGBBlinkRateSet(0.0f);
 	RGBDisable();
+
+
+	//Turn off GPS RF
+	Configure_GPS(OFF);
+
+
+	//Start the 1min timer
+	ROM_TimerEnable(TIMER0_BASE, TIMER_A);
+
+	//Delay before entering sleep
+	ROM_SysCtlDelay(ROM_SysCtlClockGet() * 2 );
+
+
 
 	//Enter Sleep Mode
 	ROM_SysCtlSleep();
 
-
 }
-
 
 
 //*****************************************************************************
@@ -492,8 +536,8 @@ Setup(void)
     RGBInit(0);
     RGBIntensitySet(0.2f);
     Configure_RGB(BLUE);
-    //RGBBlinkRateSet(0.7f);
-    RGBEnable();
+    RGBBlinkRateSet(0.7f);
+    //RGBEnable();
 
 #endif
 
@@ -538,7 +582,7 @@ Setup(void)
     PWMGenConfigure(PWM0_BASE, PWM_GEN_0, PWM_GEN_MODE_UP_DOWN |
                        PWM_GEN_MODE_NO_SYNC);
 
-    PWMGenPeriodSet(PWM0_BASE, PWM_GEN_0, 15000);
+    PWMGenPeriodSet(PWM0_BASE, PWM_GEN_0, 150000);
 
     //Duty Cycle 50%
     PWMPulseWidthSet(PWM0_BASE, PWM_OUT_0,
@@ -546,7 +590,7 @@ Setup(void)
 
 
     //Enable Pin Output
-    PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, true);
+    PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, false);
 
     //Enable PWM
     PWMGenEnable(PWM0_BASE, PWM_GEN_0);
@@ -566,7 +610,7 @@ Setup(void)
     GPIOIntEnable(GPIO_PORTE_BASE, GPIO_INT_PIN_0);
 
     // enable interrupts on port B
-    IntEnable(INT_GPIOE);
+    ROM_IntEnable(INT_GPIOE);
 
 
     //Also Configure the PushButton SW1
@@ -575,10 +619,19 @@ Setup(void)
     ROM_GPIOPadConfigSet(GPIO_PORTF_BASE, GPIO_PIN_4, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
     ROM_GPIOIntTypeSet(GPIO_PORTF_BASE, GPIO_PIN_4, GPIO_FALLING_EDGE);
     GPIOIntEnable(GPIO_PORTF_BASE, GPIO_PIN_4);
-    IntEnable(INT_GPIOF);
+    ROM_IntEnable(INT_GPIOF);
 
 
 #endif
+
+    //Setup a Timer for GPS & Wake Handling (1min) 32bit
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+    ROM_TimerConfigure(TIMER0_BASE, TIMER_CFG_PERIODIC);
+    ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, ROM_SysCtlClockGet() * 60);	//* 60
+    ROM_IntEnable(INT_TIMER0A);
+    ROM_TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
+
+
 }
 
 
@@ -609,6 +662,8 @@ main(void)
 	const char * fileName;
 	uint8_t fileCreated = 0;
 
+	uint32_t dummy = 0;
+
     Setup();
 
 #ifdef ADC_EN
@@ -617,6 +672,7 @@ main(void)
 
 #ifdef UART_EN
     Configure_UART();
+    UARTprintf("ENGG4810\n");
 #endif
 
 #ifdef I2C_EN
@@ -624,16 +680,15 @@ main(void)
     AccelSetup();
 #endif
 
+#ifdef GPS_EN
+    Configure_GPS(0);
+#endif
+
     //
     // Enable Interrupts
     //
     ROM_IntMasterEnable();
 
-    //Use to Turn off SPEAK
-    PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, false);
-
-    UARTSend(powerHigh, sizeof(powerHigh));
-    UARTSend(rate1Hz, sizeof(rate1Hz));
 
     while(1)
     {
@@ -645,48 +700,71 @@ main(void)
 
     	// 1min Sample Mode
     	case 0:
-    		Configure_RGB(GREEN);
-    		//Configure_GPS(HIGH);
-    		if (GPS_Flag) {
-    			ROM_IntMasterDisable();
 
-        		if (! fileCreated) {
-        			//Wait until GPS Fix to create log file
-        			if ( (SDBuf[18] == 'A')  ) {
-        				fileName = Configure_SD();
-        				fileCreated = 1;
-        				//Know Log file created/ fix found
-        				Configure_RGB(YELLOW);
-        				ROM_SysCtlDelay(SysCtlClockGet() / 12 );
-        				//Configure_GPS(1MIN);
-        				//Turn on Powersave mode
-        				//UARTSend(powerSave, sizeof(powerSave));
-        			}
-        		} else {
-        			//Handle cases moving from wake back to 1min
-        			if (SDBuf[18] == 'A') {
-        				writeLog(fileName);
-        			}
+    		if (MIN_Flag) {
+    			Configure_RGB(GREEN);
+
+    			//Need to Turn on GPS Here (once)
+        		if (!dummy) {
+        			Configure_GPS(ON);
+        			RGBEnable();
+        			SysTickEnable();
+        			dummy = 1;
         		}
 
-        		GPS_Flag = 0;
-        		memset(&SDBuf[0], 0, sizeof(SDBuf));
+				if (GPS_Flag) {
+					ROM_IntMasterDisable();
 
-    			ROM_IntMasterEnable();
+					if (! fileCreated) {
+						//Wait until GPS Fix to create log file
+						if ( (SDBuf[17] == 'A')  ) {
+							fileName = Configure_SD();
+							fileCreated = 1;
+							//Know Log file created/ fix found
+							UARTprintf("FILEMADE\n");
+							Configure_RGB(YELLOW);
+							ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+						}
+					} else {
+						//Collect & Log 'good' data, Start Timer again to ensure 1-Min accuracy
+						if (SDBuf[17] == 'A') {
+							UARTprintf("FILEWROTE\n");
+							writeLog(fileName);
+							MIN_Flag = 0;
+
+						}
+					}
+
+					GPS_Flag = 0;
+					memset(&SDBuf[0], 0, sizeof(SDBuf));
+					ROM_IntMasterEnable();
+				}
 
     		} else {
-    			//enterSleep();
+    			dummy = 0;
+    			UARTprintf("SLEEP\n");
+    			enterSleep();
     		}
     		break;
 
 
     	// Wake on Movement Mode
     	case 1:
-    		Configure_RGB(PINK);
 
-    		//Configure_GPS(WAKE);
-
+ 			//Got Movement
     		if (ACCEL_Flag) {
+        		Configure_RGB(CYAN);
+
+    			//Turn on GPS here (once)
+        		if (!dummy) {
+        			Configure_GPS(ON);
+        			RGBEnable();
+        			SysTickEnable();
+					//Reset time to ensure 1min
+					ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, ROM_SysCtlClockGet() * 60);
+					minCount = 0;
+        			dummy = 1;
+        		}
 
     			if (! fileCreated) {
     				fileName = Configure_SD();
@@ -697,29 +775,39 @@ main(void)
     			if (fileCreated) {
 					//Ensure full RMC string is included
     				if (GPS_Flag) {
+    					ROM_IntMasterDisable();
     					writeLog(fileName);
 						GPS_Flag = 0;
-						if ( (SDBuf[18] == 'A')  ) {
+						if ( (SDBuf[17] == 'A')  ) {
+							UARTprintf("FIXFOUND\n");
 							//Got a Fix so go back to sleep
 							ACCEL_Flag = 0;
-							//enterSleep();
+							dummy = 0;
+							enterSleep();
 						}
 						memset(&SDBuf[0], 0, sizeof(SDBuf));
+						ROM_IntMasterEnable();
     				}
+    			}
+    			//2 Minutes have passed so go back to sleep
 
+    			//Use GPS time??
+    			if (minCount >= 2) {
     				ACCEL_Flag = 0;
-
-    				//if 2 minutes have past
-    					//ACCEL_Flag = 0;
-    					//enterSleep();
+    				MIN_Flag = 0;
+    				minCount = 0;
+    				dummy = 0;
+    				UARTprintf("2MIN\n");
+    				enterSleep();
     			}
 
-
-
     		} else {
-    			//enterSleep();
+    			dummy = 0;
+    			enterSleep();
     		}
+
     		break;
+
     	}
     }
 }

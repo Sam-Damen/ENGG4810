@@ -24,6 +24,7 @@
 
 #include "Config.h"
 #include "LED.h"
+#include "UART.h"
 
 
 extern char SDBuf[100];
@@ -57,18 +58,13 @@ UARTIntHandler(void)
     // Loop while there are characters in the receive FIFO.
     //
 
-    //
-    // Turn on LED
-    //
-    Configure_RGB(2);
-
     while(ROM_UARTCharsAvail(UART1_BASE))
     {
         //
         // Read the next character from the UART1 and write it to buffer for printing
         //
     	c = (unsigned char) ROM_UARTCharGetNonBlocking(UART1_BASE);
-    	//ROM_UARTCharPutNonBlocking(UART0_BASE,c);
+    	ROM_UARTCharPutNonBlocking(UART0_BASE,c);
 
     	SDBuf[i] = c;
     	i++;
@@ -131,10 +127,6 @@ Configure_UART(void)
 
 #ifdef GPS_EN
 
-    //UARTClockSourceSet(UART1_BASE, UART_CLOCK_PIOSC);
-   // UARTStdioConfig(0, 38400, 16000000);
-
-
     ROM_UARTConfigSetExpClk(UART1_BASE, ROM_SysCtlClockGet(), 38400,
                             (UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE |
                              UART_CONFIG_PAR_NONE));
@@ -186,6 +178,62 @@ void
 Configure_GPS(uint32_t mode)
 {
 
+	switch (mode)
+	{
+
+	case HIGH:
+
+
+		//UARTSend(powerSave, sizeof(powerSave));
+
+		break;
+
+	case MIN:
+
+		break;
+
+	case WAKE:
+
+
+		break;
+
+	case OFF:
+		//Turn off the GPS RF Section
+
+		//Keeps all previous settings
+		//No RF so ~5mA
+
+		UARTSend(rfOFF, sizeof(rfOFF));
+		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+		break;
+
+	case ON:
+		//Turn on the GPS RF Section
+
+		//Call after OFF
+
+		UARTSend(rfON, sizeof(rfON));
+		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+		UARTSend(rate1Hz, sizeof(rate1Hz));
+		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+		break;
+
+	default:
+		//Initial Set-up of GPS
+
+		//1 Sec message Rate
+		//No power savings
+		//Accurate positioning (pedestrian)
+
+		UARTSend(rate1Hz, sizeof(rate1Hz));
+		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+		UARTSend(powerHigh, sizeof(powerHigh));
+		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+		UARTSend(pedMode, sizeof(pedMode));
+		ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+		break;
+
+	}
 
 
 }
