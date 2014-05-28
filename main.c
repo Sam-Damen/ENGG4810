@@ -663,6 +663,7 @@ main(void)
 	uint8_t fileCreated = 0;
 
 	uint32_t dummy = 0;
+	uint32_t sdOne = 1;
 
     Setup();
 
@@ -709,6 +710,8 @@ main(void)
         			Configure_GPS(ON);
         			RGBEnable();
         			SysTickEnable();
+        			//Reset timer load
+        			ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, ROM_SysCtlClockGet() * 60);
         			dummy = 1;
         		}
 
@@ -776,13 +779,23 @@ main(void)
 					//Ensure full RMC string is included
     				if (GPS_Flag) {
     					ROM_IntMasterDisable();
-    					writeLog(fileName);
-						GPS_Flag = 0;
+ 						GPS_Flag = 0;
+
+ 						if (sdOne) {
+ 	 	   					//Stop errors in SD log & (only want to write once)
+ 	 	    				if (SDBuf[3] == 'R') {
+ 	 	    						writeLog(fileName);
+ 	 	    						sdOne = 0;
+ 	 	    				}
+ 						}
+
 						if ( (SDBuf[17] == 'A')  ) {
 							UARTprintf("FIXFOUND\n");
+							writeLog(fileName);
 							//Got a Fix so go back to sleep
 							ACCEL_Flag = 0;
 							dummy = 0;
+							sdOne = 1;
 							enterSleep();
 						}
 						memset(&SDBuf[0], 0, sizeof(SDBuf));
@@ -797,6 +810,7 @@ main(void)
     				MIN_Flag = 0;
     				minCount = 0;
     				dummy = 0;
+    				sdOne = 1;
     				UARTprintf("2MIN\n");
     				enterSleep();
     			}
