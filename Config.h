@@ -14,6 +14,7 @@
 #define 		I2C_EN
 #define 		ADC_EN
 #define 		UART_EN
+#define 		ADV_FEAT
 
 //Hardware Peripherals
 

@@ -8,7 +8,9 @@
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include "inc/hw_ints.h"
 #include "inc/hw_memmap.h"
 #include "inc/hw_sysctl.h"
@@ -29,6 +31,10 @@
 
 extern char SDBuf[100];
 extern int GPS_Flag;
+extern int highRes;
+extern int highResEnd;
+
+extern uint32_t point2[4];
 
 
 //*****************************************************************************
@@ -235,8 +241,78 @@ Configure_GPS(uint32_t mode)
 
 	}
 
+}
+
+
+//*****************************************************************************
+//
+// Parse out the coords from a GPS or SD string
+//	pass in the data array and array to hold the 2 points
+//
+//*****************************************************************************
+
+void
+parseGPS(char * data, uint32_t * pointArr)
+{
+	char lat[10];
+	char lat2[10];
+	char lon[10];
+	char lon2[10];
+
+	//First Check if GPS or SD data
+	if (data[0] == '$') {
+		//GPS DATA
+
+		//Break the Lat & long into whole and fractional parts
+		strncpy(lat, &data[19], 4);
+		strncpy(lat2, &data[24], 5);
+		strncpy(lon, &data[32], 5);
+		strncpy(lon2, &data[38],5);
+
+		/*
+		//Convert to Integers
+		pointArr[0] = atoi(lat);
+		pointArr[1] = atoi(lat2);
+		pointArr[2] = atoi(lon);
+		pointArr[3] = atoi(lon2);
+	*/
+
+		point2[0] = atoi(lat);
+		point2[1] = atoi(lat2);
+		point2[2] = atoi(lon);
+		point2[3] = atoi(lon2);
+
+	} else {
+		//SD DATA
+		//Check High Res Mode
+		if (data[0] == '#') {
+			pointArr = 0;
+			highRes = 1;
+		} else if (data[0] == '%') {
+			pointArr = 0;
+			highResEnd = 1;
+		} else {
+
+			//Break the Lat & long into whole and fractional parts
+			strncpy(lat, data, 4);
+			strncpy(lat2, &data[5], 5);
+			strncpy(lon, &data[13], 5);
+			strncpy(lon2, &data[19],5);
+
+			//Convert to Integers
+			pointArr[0] = atoi(lat);
+			pointArr[1] = atoi(lat2);
+			pointArr[2] = atoi(lon);
+			pointArr[3] = atoi(lon2);
+		}
+	}
+
+	//UARTprintf("DATA %d, %d, %d, %d\n", pointArr[0], pointArr[1], pointArr[2], pointArr[3]);
 
 }
+
+
+
 
 
 

@@ -12,6 +12,7 @@
 #include "inc/hw_ints.h"
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
+#include "driverlib/rom.h"
 #include "inc/hw_gpio.h"
 #include "inc/hw_sysctl.h"
 
@@ -72,8 +73,8 @@ Configure_RGB(int Col)
 
 	case PINK:
 		Colours[0] = 0xFFFF;
-		Colours[1] = 0x0000;
-		Colours[2] = 0xFFFF;
+		Colours[1] = 0xFFFF;
+		Colours[2] = 0x00FF;
 		RGBColorSet(Colours);
 		break;
 
@@ -85,6 +86,5 @@ Configure_RGB(int Col)
 		break;
 	}
 
-
-
+	ROM_SysCtlDelay(1000);
 }

@@ -41,6 +41,7 @@
 extern void Configure_UART(void);
 extern void UARTSend(const uint8_t *pui8Buffer, uint32_t ui32Count);
 extern void Configure_GPS(uint32_t mode);
+extern void parseGPS(char * data, uint32_t * pointArr);
 
 
 #endif /* UART_H_ */

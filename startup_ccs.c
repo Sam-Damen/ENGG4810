@@ -65,6 +65,7 @@ extern void RGBBlinkIntHandler(void);
 extern void GPIOEIntHandler(void);
 extern void GPIOFIntHandler(void);
 extern void Timer0IntHandler(void);
+extern void Timer1IntHandler(void);
 
 //*****************************************************************************
 //
@@ -114,7 +115,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // Watchdog timer
     Timer0IntHandler,                      // Timer 0 subtimer A
     IntDefaultHandler,                      // Timer 0 subtimer B
-    IntDefaultHandler,                      // Timer 1 subtimer A
+    Timer1IntHandler,                      // Timer 1 subtimer A
     IntDefaultHandler,                      // Timer 1 subtimer B
     IntDefaultHandler,                      // Timer 2 subtimer A
     IntDefaultHandler,                      // Timer 2 subtimer B
@@ -287,6 +288,7 @@ FaultISR(void)
     // Enter an infinite loop.
     //
 	Configure_RGB(0);
+
 	RGBEnable();
     while(1)
     {

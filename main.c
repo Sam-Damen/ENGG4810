@@ -45,6 +45,17 @@ uint32_t AppState = 0;
 int MIN_Flag = 1;
 uint32_t minCount = 0;
 
+
+int highRes = 0;
+int highResEnd = 0;
+uint32_t sec = 0;
+uint32_t secCount = 0;
+char GPSData[150] = {0};
+
+uint32_t points[5][4] = {0};
+uint32_t point2[4] = {0};
+char SDdata[80] = {0};
+
 //*****************************************************************************
 //
 // The error routine that is called if the driver library encounters an error.
@@ -77,6 +88,7 @@ static FATFS FatFs;
 static DIR DirObj;
 static FILINFO FilInfo;
 static FIL FilObj;
+static FIL FilObj2;
 
 //*****************************************************************************
 //
@@ -263,6 +275,42 @@ SDWrite(const char * file, char * data)
 
 //*****************************************************************************
 //
+// SD card read function
+//	filename & buffer for data
+//	return single line of file
+//
+//*****************************************************************************
+
+int
+SDRead(char * data)
+{
+	//
+	//Disable Interrupts
+	//
+	ROM_IntMasterDisable();
+
+	//Get a Line of Data
+	f_gets(data, FilObj2.fsize , &FilObj2);
+
+	//May not work f_eof...?
+	if ( data[0] == '\0' ) {
+		//EOF
+		return 1;
+	}
+
+    //
+    //Enable Interrupts
+    //
+    ROM_IntMasterEnable();
+
+    return 0;
+
+
+}
+
+
+//*****************************************************************************
+//
 // Configure the SD Card
 //
 //*****************************************************************************
@@ -296,6 +344,24 @@ Configure_SD(void)
         UARTprintf("f_mount error: %s\n", StringFromFResult(iFResult));
 		SDerror();
     }
+
+
+	//Search for GPSData.txt
+	if (f_opendir(&DirObj, Cwd) == FR_OK) {
+		while( (f_readdir(&DirObj, &FilInfo) == FR_OK) && FilInfo.fname[0]) {
+			if (FilInfo.fname[0] == 'G'){
+				//Now in 7 mode, Open the file
+				AppState = 2;
+				iFResult = f_open(&FilObj2,"GPSData.txt", FA_READ );
+			    if(iFResult != FR_OK)
+			    {
+			        UARTprintf("Create file error: %s\n", StringFromFResult(iFResult));
+			        SDerror();
+			    }
+			}
+		}
+	}
+
 
     //
     // Create New File
@@ -344,11 +410,6 @@ writeLog(const char * fileName)
 	int16_t ACCLdata[3] = {0};
 	uint16_t PRESSdata[2] = {0};
 
-    //
-    // Turn on LED
-    //
-    Configure_RGB(BLUE);
-
 	//Temperature
 	sprintf(ADCBuf, "%d\n", ReadADC(TEM_ADC));
 	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
@@ -366,6 +427,12 @@ writeLog(const char * fileName)
 	pressRead(PRESSdata);
 	sprintf(PRESSBuf, "%d %d\n\n", PRESSdata[0], PRESSdata[1]);
 	ROM_SysCtlDelay(SysCtlClockGet() / 24 );
+
+	if (highRes) {
+		//Clear SDBuf then load GPSData
+		memset(&SDBuf[0], 0, sizeof(SDBuf));
+		strcat(SDBuf, GPSData);
+	}
 
 	//Combine into one Buffer
 	strcat(SDBuf, ACCLBuf);
@@ -412,6 +479,10 @@ GPIOFIntHandler(void)
 	//Debounce
 	ROM_SysCtlDelay(ROM_SysCtlClockGet() / 6);
 
+	if (AppState == 2) {
+		AppState = 0;
+	}
+
 	AppState ^= 1;
 
 }
@@ -429,7 +500,172 @@ Timer0IntHandler(void)
 	ROM_TimerIntClear(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 	MIN_Flag = 1;
 	UARTprintf("1MIN\n");
-	minCount++;
+	if (AppState <= 1) {
+		minCount++;
+	}
+	if (AppState == 2) {
+		secCount++;
+		sec = 1;
+		UARTprintf("s\n");
+	}
+}
+
+
+//*****************************************************************************
+//
+// Timer1 Interrupt Handler
+//
+//*****************************************************************************
+
+void
+Timer1IntHandler(void)
+{
+	//Let program know 1 sec has passed
+	ROM_TimerIntClear(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+	sec = 1;
+	secCount++;
+}
+
+
+//*****************************************************************************
+//
+// Check if current Coords are within the bounds
+//
+//*****************************************************************************
+int
+checkGPS(uint32_t *p, uint32_t *p2)
+{
+
+	//Point = SD card
+	//Point2 = GPS
+
+	int32_t sdLatD = p[0];		//Degrees & Minutes
+	int32_t sdLatF = p[1];		//Fractional part of minutes
+	int32_t sdLonD = p[2];
+	int32_t sdLonF = p[3];
+
+	uint32_t gpsLatD = p2[0];
+	uint32_t gpsLatF = p2[1];
+	uint32_t gpsLonD = p2[2];
+	uint32_t gpsLonF = p2[3];
+
+	//Bounding Box variables
+	uint32_t tD, tF, bD, bF, lD, lF, rD, rF;
+
+	//Overflow Flags
+	uint8_t tO = 0, bO = 0, lO = 0, rO = 0;
+	uint8_t top = 0, bot = 0, left = 0, right = 0;
+
+	//Value in decimal minutes to add/ subtract around the GPS point
+	int32_t accuracy = 1200;
+
+	//Create the Bounding Box positions
+	//Taking into account overflow for each side
+
+	//Top
+	if ( (sdLatF - accuracy) < 0) {
+		tD = sdLatD - 1;
+		tF = 100000 - (accuracy - sdLatF);
+		tO = 1;
+	} else {
+		tD = sdLatD;
+		tF = sdLatF - accuracy;
+	}
+
+	//Bottom
+	if (sdLatF + accuracy > 100000) {
+		bD = sdLatD + 1;
+		bF = (sdLatF + accuracy) - 1000000;
+		bO = 1;
+	} else {
+		bD = sdLatD;
+		bF = sdLatF + accuracy;
+	}
+
+	//Left
+	if ( (sdLonF - accuracy) < 0) {
+		lD = sdLonD -1;
+		lF = 100000 - (accuracy - sdLonF);
+		lO = 1;
+	} else {
+		lD = sdLonD;
+		lF = sdLonF - accuracy;
+	}
+
+	//Right
+	if (sdLonF + accuracy > 100000) {
+		rD = sdLonD + 1;
+		rF = (sdLonF + accuracy) - 100000;
+		rO = 1;
+	} else {
+		rD = sdLonD;
+		rF = sdLonF + accuracy;
+	}
+
+	//Check if GPS coord is within bounding box
+
+	//Top Check
+	if (tO) {
+		//Overflow
+		if ( (gpsLatD == tD ) && (gpsLatF >= tF) ) {
+			top = 1;
+		} else if ( (gpsLatD > tD) ) {
+			top = 1;
+		}
+	} else {
+		if ( (gpsLatD >= tD) && (gpsLatF >= tF) ) {
+			top = 1;
+		}
+	}
+
+	//Bottom Check
+	if (bO) {
+		//Overflow
+		if ( (gpsLatD == bD ) && (gpsLatF <= bF) ) {
+			bot = 1;
+		} else if ( (gpsLatD < bD) ) {
+			bot = 1;
+		}
+	} else {
+		if ( (gpsLatD <= bD) && (gpsLatF <= bF) ) {
+			bot = 1;
+		}
+	}
+
+	//Left Check
+	if (lO) {
+		//Overflow
+		if ( (gpsLonD == lD ) && (gpsLonF >= lF) ) {
+			left = 1;
+		} else if ( (gpsLonD > lD) ) {
+			left = 1;
+		}
+	} else {
+		if ( (gpsLonD >= lD) && (gpsLonF >= lF) ) {
+			left = 1;
+		}
+	}
+
+	//Right Check
+	if (rO) {
+		//Overflow
+		if ( (gpsLonD == rD ) && (gpsLonF <= rF) ) {
+			right = 1;
+		} else if ( (gpsLonD < rD) ) {
+			right = 1;
+		}
+	} else {
+		if ( (gpsLonD <= rD) && (gpsLonF <= rF) ) {
+			right = 1;
+		}
+	}
+
+	UARTprintf("T: %d\nB: %d\nL: %d\nR: %d\n", top, bot, left, right);
+	if (top && bot && left && right) {
+		return 1;
+	} else {
+		return 0;
+	}
 }
 
 //*****************************************************************************
@@ -467,22 +703,6 @@ enterSleep(void)
 	//
 	ROM_SysCtlPeripheralClockGating(true);
 
-
-
-	//Try manually turning things off
-
-	//
-	// Reduce Voltage & Power
-	//
-	//SysCtlLDOSleepSet(SYSCTL_LDO_0_90V);
-	//SysCtlSleepPowerSet(SYSCTL_SRAM_LOW_POWER | SYSCTL_FLASH_LOW_POWER);
-
-	//
-	// Turn off UV/MPL
-	//
-	//mpl = PD6
-	//uv = PE4
-
 	//Ensure LED is off (to stop interrupts)
 	RGBBlinkRateSet(0.0f);
 	RGBDisable();
@@ -491,14 +711,11 @@ enterSleep(void)
 	//Turn off GPS RF
 	Configure_GPS(OFF);
 
-
 	//Start the 1min timer
 	ROM_TimerEnable(TIMER0_BASE, TIMER_A);
 
 	//Delay before entering sleep
 	ROM_SysCtlDelay(ROM_SysCtlClockGet() * 2 );
-
-
 
 	//Enter Sleep Mode
 	ROM_SysCtlSleep();
@@ -631,6 +848,20 @@ Setup(void)
     ROM_IntEnable(INT_TIMER0A);
     ROM_TimerIntEnable(TIMER0_BASE, TIMER_TIMA_TIMEOUT);
 
+#ifdef ADV_FEAT
+
+    /*
+    //1 Sec timer for highRes
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
+    ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_PERIODIC);
+    ROM_TimerLoadSet(TIMER1_BASE, TIMER_A, ROM_SysCtlClockGet());
+    ROM_IntEnable(INT_TIMER1A);
+    ROM_TimerIntEnable(TIMER1_BASE, TIMER_TIMA_TIMEOUT);
+
+*/
+
+#endif
+
 
 }
 
@@ -665,6 +896,15 @@ main(void)
 	uint32_t dummy = 0;
 	uint32_t sdOne = 1;
 
+	//7 Variables
+	char SDdata[80] = {0};
+	uint32_t point[4] = {0};
+
+	//Store all SD card points
+	int inside = 0;
+	uint32_t i = 0, j = 0;
+
+
     Setup();
 
 #ifdef ADC_EN
@@ -682,7 +922,18 @@ main(void)
 #endif
 
 #ifdef GPS_EN
-    Configure_GPS(0);
+   Configure_GPS(0);
+#endif
+
+#ifdef ADV_FEAT
+
+    //Check for SD Config file
+    fileName = Configure_SD();
+    //Don't switch to other modes....
+    fileCreated = 1;
+    ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, ROM_SysCtlClockGet() * 60);
+    MIN_Flag = 0;
+
 #endif
 
     //
@@ -708,7 +959,8 @@ main(void)
     			//Need to Turn on GPS Here (once)
         		if (!dummy) {
         			Configure_GPS(ON);
-        			RGBEnable();
+        			//RGBEnable();
+        			RGBBlinkRateSet(0.7f);
         			SysTickEnable();
         			//Reset timer load
         			ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, ROM_SysCtlClockGet() * 60);
@@ -730,11 +982,18 @@ main(void)
 						}
 					} else {
 						//Collect & Log 'good' data, Start Timer again to ensure 1-Min accuracy
+
 						if (SDBuf[17] == 'A') {
 							UARTprintf("FILEWROTE\n");
 							writeLog(fileName);
 							MIN_Flag = 0;
-
+							minCount = 0;
+							//Need to still Log if no fix...
+						} else if ( (minCount >= 2) && (SDBuf[3] == 'R') ) {
+							UARTprintf("NO FIX 2 MIN\n");
+							writeLog(fileName);
+							MIN_Flag = 0;
+							minCount = 0;
 						}
 					}
 
@@ -761,10 +1020,11 @@ main(void)
     			//Turn on GPS here (once)
         		if (!dummy) {
         			Configure_GPS(ON);
-        			RGBEnable();
+        			//RGBEnable();
+        			RGBBlinkRateSet(0.7f);
         			SysTickEnable();
 					//Reset time to ensure 1min
-					ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, ROM_SysCtlClockGet() * 60);
+					ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, ROM_SysCtlClockGet() * 30);
 					minCount = 0;
         			dummy = 1;
         		}
@@ -803,8 +1063,6 @@ main(void)
     				}
     			}
     			//2 Minutes have passed so go back to sleep
-
-    			//Use GPS time??
     			if (minCount >= 2) {
     				ACCEL_Flag = 0;
     				MIN_Flag = 0;
@@ -822,6 +1080,62 @@ main(void)
 
     		break;
 
+    	//7 Mode
+    	case 2:
+    		Configure_RGB(BLUE);
+
+			if (!dummy) {
+
+				//Load in all the SD card points
+				while ( !(SDRead(SDdata)) ) {
+					parseGPS(SDdata, point);
+					for (j = 0; j < 4; j++) {
+						points[i][j] = point[j];
+					}
+					i++;
+				}
+				memset(&SDdata[0], 0, sizeof(SDdata));
+				memset(&point[0], 0, sizeof(point));
+
+				dummy = 1;
+				Configure_GPS(ON);
+				RGBBlinkRateSet(0.7f);
+				ROM_SysCtlDelay(SysCtlClockGet() / 12 );
+			}
+
+			//Read in Current GPS coordinates
+			if (GPS_Flag) {
+				ROM_IntMasterDisable();
+				GPS_Flag = 0;
+				inside = 0;
+
+				if (SDBuf[17] == 'A') {
+					memset(&point2[0], 0, sizeof(point2));
+
+					parseGPS(SDBuf, point2);
+
+					for (j = 0; j < 4; j++) {
+					//Check if we are within path
+						if ( checkGPS(points[j], point2) ) {
+							inside = 1;
+							UARTprintf("YAY\n");
+						}
+					}
+
+					if (!inside) {
+						//Beep the Buzzer
+						//Flash the LED
+						PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, true);
+						Configure_RGB(GREEN);
+						ROM_SysCtlDelay(500000);
+						PWMOutputState(PWM0_BASE, PWM_OUT_0_BIT, false);
+					}
+
+				}
+				memset(&SDBuf[0], 0, sizeof(SDBuf));
+				ROM_IntMasterEnable();
+			}
+			break;
     	}
     }
 }
